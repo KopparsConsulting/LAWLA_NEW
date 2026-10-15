@@ -3,7 +3,7 @@
 Webbapp för juridisk rättsutredning, byggd för Cloudflare. Frontenden är en ren yta;
 all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
 
-**Produktion:** https://lawla.kopparsconsulting.se
+**Produktion:** https://lawla.kopparsconsulting.com
 
 ## Vad appen gör
 
@@ -17,7 +17,7 @@ all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
 ## Arkitektur
 
 ```
-Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.se)
+Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.com)
                 ├─ statiska filer (React-SPA)
                 ├─ /auth/*  inloggning, httpOnly-cookie
                 └─ /api/*   proxy ──► lawla.berge.tech (Bearer-token från cookien)

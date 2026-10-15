@@ -28,13 +28,13 @@ POST /api/feedback            (kräver inloggning, Bearer-token)
 Workern skickar användaren till:
 
 ```
-GET /api/Auth/google?returnUrl=https://lawla.kopparsconsulting.se/auth/callback
+GET /api/Auth/google?returnUrl=https://lawla.kopparsconsulting.com/auth/callback
 ```
 
 Efter lyckad inloggning ska backend redirecta till `returnUrl?token=<JWT>`.
 Workern lägger då token i en httpOnly-cookie och tar bort den ur adressen.
 
-- Lägg till `https://lawla.kopparsconsulting.se/auth/callback` i tillåtna retur-URL:er
+- Lägg till `https://lawla.kopparsconsulting.com/auth/callback` i tillåtna retur-URL:er
   (och Google Cloud-konsolens redirect-URI:er om backendens callback-adress ändras).
 - Godkänn bara retur-URL:er från en vitlista.
 

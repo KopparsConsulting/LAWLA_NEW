@@ -13,10 +13,10 @@
   },
   "vars": {
     "BACKEND_URL": "https://lawla.berge.tech",
-    "APP_ORIGIN": "https://lawla.kopparsconsulting.se"
+    "APP_ORIGIN": "https://lawla.kopparsconsulting.com"
   },
   "routes": [
-    { "pattern": "lawla.kopparsconsulting.se", "custom_domain": true }
+    { "pattern": "lawla.kopparsconsulting.com", "custom_domain": true }
   ],
   "env": {
     // Testmiljö på workers.dev, utan egen domän: `wrangler deploy --env staging`

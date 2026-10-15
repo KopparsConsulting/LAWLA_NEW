@@ -3,26 +3,32 @@
 Appen körs som en Cloudflare Worker med statiska filer (Workers Static Assets).
 Workern hanterar bara `/api/*` och `/auth/*`; allt annat serveras direkt som SPA.
 
-## Engångsuppsättning
+## Automatisk deploy (Workers Builds)
 
-1. **Domän** – `kopparsconsulting.se` måste ligga som zon i samma Cloudflare-konto.
-   `wrangler.jsonc` har `lawla.kopparsconsulting.se` som *custom domain*; Cloudflare skapar
-   DNS-post och certifikat automatiskt vid första deploy.
-2. **API-token** – skapa en token i Cloudflare (mall *Edit Cloudflare Workers*), med
-   behörighet till kontot och zonen `kopparsconsulting.se`.
-3. **GitHub-hemligheter** i repot (Settings → Secrets and variables → Actions):
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
+Cloudflare bygger och deployar själv vid varje push till `main`, via Git-kopplingen
+i dashboarden. Inga hemligheter behövs i GitHub.
 
-Därefter deployar GitHub Actions automatiskt vid push till `main`
-(`.github/workflows/ci.yml`). Pull requests byggs och testas men deployas inte.
+Inställningar under **Workers & Pages → lawla → Settings → Builds**:
+
+| Inställning | Värde |
+|---|---|
+| Repository | `KopparsConsulting/LAWLA_NEW` |
+| Branch | `main` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/` |
+
+- Worker-namnet i dashboarden måste vara `lawla`, samma som `name` i `wrangler.jsonc`.
+- Domänen `lawla.kopparsconsulting.com` kopplas automatiskt vid deploy eftersom zonen
+  `kopparsconsulting.com` ligger i samma Cloudflare-konto.
+- GitHub Actions (`.github/workflows/ci.yml`) kör bara typkontroll, lint, tester och bygge.
 
 ## Manuellt
 
 ```sh
 npm ci
 npx wrangler login
-npm run deploy                     # produktion → lawla.kopparsconsulting.se
+npm run deploy                     # produktion → lawla.kopparsconsulting.com
 CLOUDFLARE_ENV=staging npm run deploy   # testmiljö → lawla-staging.<konto>.workers.dev
 ```
 
