@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lawla",
+  "compatibility_date": "2026-10-15",
+  "main": "./worker/index.ts",
+  "upload_source_maps": true,
+  "observability": { "enabled": true },
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Bara API- och auth-anrop går via Workern; allt annat serveras direkt som statiska filer.
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+  "vars": {
+    "BACKEND_URL": "https://lawla.berge.tech",
+    "APP_ORIGIN": "https://lawla.kopparsconsulting.se"
+  },
+  "routes": [
+    { "pattern": "lawla.kopparsconsulting.se", "custom_domain": true }
+  ],
+  "env": {
+    // Testmiljö på workers.dev, utan egen domän: `wrangler deploy --env staging`
+    "staging": {
+      "name": "lawla-staging",
+      "workers_dev": true,
+      "routes": [],
+      "vars": {
+        "BACKEND_URL": "https://lawla.berge.tech",
+        "APP_ORIGIN": ""
+      }
+    }
+  }
+}
