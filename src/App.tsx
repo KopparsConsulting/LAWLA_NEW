@@ -10,6 +10,8 @@ import LoginPage from "@/features/auth/LoginPage";
 
 const InvestigationsPage = lazy(() => import("@/features/investigation/InvestigationsPage"));
 const InvestigationPage = lazy(() => import("@/features/investigation/InvestigationPage"));
+const HistoryPage = lazy(() => import("@/features/investigation/HistoryPage"));
+const ReportPage = lazy(() => import("@/features/investigation/ReportPage"));
 const DocumentsPage = lazy(() => import("@/features/documents/DocumentsPage"));
 const DocumentPage = lazy(() => import("@/features/documents/DocumentPage"));
 const AskPage = lazy(() => import("@/features/ask/AskPage"));
@@ -43,6 +45,8 @@ export default function App() {
                 >
                   <Route index element={<InvestigationsPage />} />
                   <Route path="utredning/:id" element={<InvestigationPage />} />
+                  <Route path="utredning/:id/historik" element={<HistoryPage />} />
+                  <Route path="utredning/:id/rapport" element={<ReportPage />} />
                   <Route path="utredning/:id/:step" element={<InvestigationPage />} />
                   <Route path="dokument" element={<DocumentsPage />} />
                   <Route path="dokument/:id" element={<DocumentPage />} />

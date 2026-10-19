@@ -34,6 +34,21 @@ CLOUDFLARE_ENV=staging npm run deploy   # testmiljö → lawla-staging.<konto>.w
 
 Med Cloudflares Vite-plugin väljs miljö vid bygget via `CLOUDFLARE_ENV`.
 
+## Versionshistorik (D1)
+
+Versioner av ärenden lagras i D1-databasen `lawla-history` (binding `DB` i `wrangler.jsonc`,
+skapad i västra Europa). Tabellen `project_versions` skapas automatiskt av Workern vid första
+anropet – ingen migrering behövs. Saknas bindingen svarar `/history/*` med 503 och appen visar
+att historik inte är aktiverad.
+
+Databasen innehåller ögonblicksbilder av ärenden (titel, beskrivning, frågor, omständigheter,
+rättsfrågor, källhänvisningar). Den ligger i Koppars Consultings Cloudflare-konto – se
+`docs/BACKEND.md` för önskemålet att flytta historiken till backend.
+
+```sh
+npx wrangler d1 execute lawla-history --remote --command "SELECT project_id, COUNT(*) FROM project_versions GROUP BY 1"
+```
+
 ## Konfiguration
 
 | Variabel      | Var             | Beskrivning |

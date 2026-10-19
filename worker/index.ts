@@ -19,12 +19,15 @@ import {
   sessionCookie,
   withSecurity,
 } from "./lib";
+import { handleHistory } from "./history";
 
 export interface Env {
   ASSETS: Fetcher;
   BACKEND_URL: string;
   /** Publik adress för appen, används som retur-URL vid Google-inloggning. Tom = härleds från requesten. */
   APP_ORIGIN: string;
+  /** D1-databas för versionshistorik (valfri – utan den svarar /history med 503). */
+  DB?: D1Database;
 }
 
 export default {
@@ -33,6 +36,7 @@ export default {
     try {
       if (url.pathname.startsWith("/auth/")) return withSecurity(await handleAuth(request, env, url));
       if (url.pathname.startsWith("/api/")) return withSecurity(await handleApi(request, env, url));
+      if (url.pathname.startsWith("/history/")) return withSecurity(await handleHistory(request, env, url));
       return env.ASSETS.fetch(request);
     } catch (err) {
       console.error("worker error", err);

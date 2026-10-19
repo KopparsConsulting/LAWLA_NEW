@@ -44,7 +44,27 @@ Workern lägger då token i en httpOnly-cookie och tar bort den ur adressen.
 Frontenden skickar `Accept: text/event-stream` och klarar båda varianterna – svarar
 backend med SSE (`data: {"type":"content","content":"…"}`) visas texten medan den skrivs.
 
-## 4. Mindre saker
+## 4. Spårbarhet, redigering och historik (önskemål)
+
+Frontenden har byggt dessa funktioner ovanpå dagens API. De blir robustare om backend stödjer dem:
+
+- **Strukturerade källhänvisningar i analyser.** I dag letar frontenden upp lagrum, rättsfall och
+  förarbeten i analystexten med mönster och matchar mot underlaget. Om analyserna
+  (`LegalIssueAnalysisDto`, `ProjectAnalysisDto`) i stället returnerade en lista
+  `citations: [{ text, evidenceId, chunkId, start, end }]` – eller markdown-länkar med
+  `evidenceId` – blir spårbarheten exakt i stället för heuristisk. Prompten till modellen bör
+  också be den hänvisa till underlaget med samma etiketter (`displayLabel`) som finns i `evidence`.
+- **`PUT /api/Projects/{id}/evidence/{eid}`** med `displayLabel` och `annotation`. I dag sparas en
+  ändrad kommentar som ny post + borttagning av den gamla (id:t byts).
+- **Versionshistorik i backend.** Workern sparar i dag ögonblicksbilder av ärendet i en D1-databas
+  på Cloudflare (`worker/history.ts`), eftersom backend saknar versionering. Långsiktigt bör
+  ärendets historik ligga hos backend tillsammans med ärendet:
+  `GET /api/Projects/{id}/versions`, `POST /api/Projects/{id}/versions {label}`,
+  `GET /api/Projects/{id}/versions/{vid}`. Formatet som Workern använder finns i `shared/snapshot.ts`.
+- **Export.** Word/PDF skapas i webbläsaren från ärendets data. Om backend vill äga dokumentmallen
+  kan `GET /api/Projects/{id}/export?format=docx|pdf` ta över; frontenden skickar då bara vidare.
+
+## 5. Mindre saker
 
 - `RagQueryRequest` saknar `projectId`. Frontenden skickar i dag med ärendets kontext i
   själva frågan. Ett `projectId`-fält skulle ge bättre och billigare svar.

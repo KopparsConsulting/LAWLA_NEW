@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, FileText, Play, Square } from "lucide-react";
-import { projectsApi } from "@/api/client";
+import { Link } from "react-router-dom";
+import { Copy, Download, FileText, History, Play, Square } from "lucide-react";
+import { historyApi, projectsApi } from "@/api/client";
 import type { ProjectAnalysisDto, ProjectDetailDto } from "@/api/types";
 import { Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { downloadText, formatDateTime, slugify } from "@/lib/format";
+import { CitedMarkdown } from "../SourcePanel";
 
 export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
   const key = ["analyses", project.id];
   const analyses = useQuery({ queryKey: key, queryFn: () => projectsApi.analyses(project.id) });
+  const evidence = useQuery({ queryKey: ["evidence", project.id], queryFn: () => projectsApi.evidence(project.id) });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [streamText, setStreamText] = useState("");
   const [running, setRunning] = useState(false);
@@ -39,6 +42,8 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
     setStreamText("");
     let text = "";
     try {
+      // Spara en version av underlaget innan analysen, så att det går att se vad den byggde på.
+      await historyApi.snapshot(project.id, { trigger: "analysis" }).catch(() => undefined);
       const result = await projectsApi.runAnalysis(
         project.id,
         (ev) => {
@@ -126,13 +131,22 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
                   Kopiera
                 </Button>
                 <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => exportMarkdown(selected)}>
-                  Ladda ner
+                  Markdown
                 </Button>
+                <Link
+                  to={`/utredning/${project.id}/rapport`}
+                  className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted hover:bg-sunken hover:text-ink"
+                >
+                  <FileText className="size-3.5" /> Rapport (Word/PDF)
+                </Link>
               </div>
             </div>
-            <Markdown>{selected.outputContent ?? ""}</Markdown>
+            <CitedMarkdown markdown={selected.outputContent ?? ""} evidence={evidence.data ?? []} projectId={project.id} />
             <p className="mt-8 border-t border-line pt-3 text-xs text-muted">
-              AI-genererat utkast. Kontrollera hänvisningar och slutsatser innan det används i rådgivning.
+              AI-genererat utkast. Kontrollera hänvisningar och slutsatser innan det används i rådgivning.{" "}
+              <Link to={`/utredning/${project.id}/historik`} className="inline-flex items-center gap-1 underline decoration-dotted hover:text-ink">
+                <History className="size-3" /> Se vilket underlag analysen byggde på
+              </Link>
             </p>
           </Card>
           {sorted.length > 1 && (

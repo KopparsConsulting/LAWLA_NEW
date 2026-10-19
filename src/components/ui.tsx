@@ -1,6 +1,7 @@
 import { forwardRef, lazy, Suspense, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 import clsx from "clsx";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import type { MarkdownProps } from "./MarkdownImpl";
 
 export { clsx as cx };
 
@@ -126,10 +127,10 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 const MarkdownImpl = lazy(() => import("./MarkdownImpl"));
 
 /** Markdown laddas som separat chunk – den behövs bara där AI-text visas. */
-export function Markdown({ children }: { children: string }) {
+export function Markdown({ children, onCitation }: MarkdownProps) {
   return (
     <Suspense fallback={<div className="whitespace-pre-wrap text-sm">{children}</div>}>
-      <MarkdownImpl>{children}</MarkdownImpl>
+      <MarkdownImpl onCitation={onCitation}>{children}</MarkdownImpl>
     </Suspense>
   );
 }

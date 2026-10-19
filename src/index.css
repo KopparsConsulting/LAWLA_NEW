@@ -76,3 +76,21 @@ body {
   --tw-prose-td-borders: var(--line);
 }
 .prose-lawla h1, .prose-lawla h2, .prose-lawla h3 { font-family: var(--font-serif); }
+
+/* Hänvisningar i AI-text som leder till underlaget */
+.prose-lawla a.citation { cursor: pointer; }
+
+/* Utskrift (PDF): rapporten ska se ut som ett dokument, inte en webbsida */
+@media print {
+  :root { --paper: #ffffff; --surface: #ffffff; --sunken: #f3f3f3; --ink: #000000; --muted: #444444; --line: #cccccc; --accent: #1f3b63; --accent-soft: #eef2f7; color-scheme: light; }
+  body { background: #fff; font-size: 11pt; }
+  .prose-lawla { font-size: 11pt; line-height: 1.5; }
+  .prose-lawla h1 { font-size: 20pt; }
+  .prose-lawla h2 { font-size: 14pt; break-after: avoid; margin-top: 1.4em; }
+  .prose-lawla h3 { font-size: 12pt; break-after: avoid; }
+  .prose-lawla a.citation { color: inherit !important; border: 0 !important; }
+  .prose-lawla a.citation svg { display: none; }
+  .prose-lawla a.citation-missing { text-decoration: underline dotted; }
+  .prose-lawla li, .prose-lawla blockquote { break-inside: avoid; }
+  @page { margin: 22mm 20mm; }
+}

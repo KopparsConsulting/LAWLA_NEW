@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, FlaskConical } from "lucide-react";
-import { projectsApi } from "@/api/client";
-import type { ProjectDetailDto, ProjectLegalIssueDto } from "@/api/types";
+import { historyApi, projectsApi } from "@/api/client";
+import type { ExpandedEvidenceDto, ProjectDetailDto, ProjectLegalIssueDto } from "@/api/types";
 import { Badge, Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
+import { CitedMarkdown } from "../SourcePanel";
 
 export function IssueAnalysesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const issues = [...(project.legalIssues ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const evidence = useQuery({ queryKey: ["evidence", project.id], queryFn: () => projectsApi.evidence(project.id) });
 
   if (issues.length === 0) {
     return (
@@ -29,20 +31,35 @@ export function IssueAnalysesStep({ project, aiEnabled }: { project: ProjectDeta
       )}
       {!aiEnabled && <p className="text-sm text-muted">AI-analys är avstängd i plattformen just nu.</p>}
       {issues.map((issue, i) => (
-        <IssueCard key={issue.id} projectId={project.id} issue={issue} index={i + 1} aiEnabled={aiEnabled} />
+        <IssueCard key={issue.id} projectId={project.id} issue={issue} index={i + 1} aiEnabled={aiEnabled} evidence={evidence.data ?? []} />
       ))}
     </div>
   );
 }
 
-function IssueCard({ projectId, issue, index, aiEnabled }: { projectId: number; issue: ProjectLegalIssueDto; index: number; aiEnabled: boolean }) {
+function IssueCard({
+  projectId,
+  issue,
+  index,
+  aiEnabled,
+  evidence,
+}: {
+  projectId: number;
+  issue: ProjectLegalIssueDto;
+  index: number;
+  aiEnabled: boolean;
+  evidence: ExpandedEvidenceDto[];
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(issue.analysisCount > 0);
   const key = ["issueAnalyses", projectId, issue.id];
   const analyses = useQuery({ queryKey: key, queryFn: () => projectsApi.issueAnalyses(projectId, issue.id), enabled: open });
 
   const analyze = useMutation({
-    mutationFn: () => projectsApi.analyzeIssue(projectId, issue.id),
+    mutationFn: async () => {
+      await historyApi.snapshot(projectId, { trigger: "analysis" }).catch(() => undefined);
+      return projectsApi.analyzeIssue(projectId, issue.id);
+    },
     onSuccess: () => {
       setOpen(true);
       void qc.invalidateQueries({ queryKey: key });
@@ -89,7 +106,7 @@ function IssueCard({ projectId, issue, index, aiEnabled }: { projectId: number; 
           {latest && (
             <>
               <p className="mb-2 text-xs text-muted">Senaste analys · {formatDateTime(latest.createdAt)}</p>
-              <Markdown>{latest.outputContent ?? ""}</Markdown>
+              <CitedMarkdown markdown={latest.outputContent ?? ""} evidence={evidence} projectId={projectId} />
             </>
           )}
           {older.length > 0 && (

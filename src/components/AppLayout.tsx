@@ -20,7 +20,7 @@ export function AppLayout() {
     <div className="flex min-h-full">
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-line bg-surface transition-transform lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-line bg-surface transition-transform print:hidden lg:static lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -66,17 +66,19 @@ export function AppLayout() {
       {open && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
+        <header className="flex h-14 items-center gap-3 border-b border-line bg-surface px-4 print:hidden lg:hidden">
           <button onClick={() => setOpen(true)} aria-label="Öppna meny">
             <Menu className="size-5" />
           </button>
           <span className="font-semibold">Lawla</span>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-8 sm:px-8">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-8 print:max-w-none print:p-0 sm:px-8">
           <Outlet />
         </main>
       </div>
-      <FeedbackButton />
+      <div className="print:hidden">
+        <FeedbackButton />
+      </div>
     </div>
   );
 }

@@ -27,5 +27,7 @@ describe("buildSuggestPrompt", () => {
     expect(prompt).toContain("rättsfrågor");
     expect(prompt).toContain("Förord skrevs på bröllopsdagen.");
     expect(prompt).toContain("- Kan förordet jämkas?");
+    expect(prompt).not.toContain("Juristens instruktion");
+    expect(buildSuggestPrompt("legal-issues", p, "Fokusera på jämkning")).toContain("Juristens instruktion för förslagen: Fokusera på jämkning");
   });
 });

@@ -24,12 +24,17 @@ function bullets(items: { text: string | null }[] | null | undefined): string {
   return list.length ? list.map((t) => `- ${t}`).join("\n") : "(inga ännu)";
 }
 
-/** Bygger frågan som skickas till RAG-endpointen för att ta fram förslag. */
-export function buildSuggestPrompt(kind: SuggestKind, project: ProjectDetailDto): string {
+/**
+ * Bygger frågan som skickas till RAG-endpointen för att ta fram förslag.
+ * `instruction` är juristens egen styrning, t.ex. "Fokusera på jämkning" eller "Mer konkreta frågor".
+ */
+export function buildSuggestPrompt(kind: SuggestKind, project: ProjectDetailDto, instruction?: string): string {
   const { what, guidance } = KIND_TEXT[kind];
+  const steer = instruction?.trim();
   return [
     `Du hjälper en jurist att strukturera en rättsutredning enligt svensk rätt. Föreslå ${what} för ärendet nedan.`,
     guidance,
+    ...(steer ? [`Juristens instruktion för förslagen: ${steer}`] : []),
     "Svara ENDAST med en JSON-array av strängar på svenska, högst 6 poster, utan annan text. Upprepa inte sådant som redan finns.",
     "",
     `Ärende: ${project.title ?? ""}`,

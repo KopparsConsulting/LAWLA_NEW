@@ -1,4 +1,5 @@
 import { createSseParser } from "./sse";
+import type { VersionDetail, VersionSummary, VersionTrigger } from "../../shared/snapshot";
 import type {
   AddEvidenceRequest,
   ChunkDetailDto,
@@ -146,6 +147,22 @@ export const projectsApi = {
   evidence: (id: number) => get<ExpandedEvidenceDto[]>(`/api/Projects/${id}/evidence/expanded`),
   addEvidence: (id: number, body: AddEvidenceRequest) => post<ProjectEvidenceDto>(`/api/Projects/${id}/evidence`, body),
   removeEvidence: (id: number, evidenceId: number) => del(`/api/Projects/${id}/evidence/${evidenceId}`),
+  /**
+   * Backend saknar PUT för rättskällor (se docs/BACKEND.md), så en ändrad etikett eller kommentar
+   * sparas som ny post med samma textställe, varefter den gamla tas bort. Nya posten skapas först
+   * så att ingen källa går förlorad om något går fel.
+   */
+  replaceEvidence: async (id: number, old: ExpandedEvidenceDto, changes: { displayLabel: string | null; annotation: string | null }) => {
+    const created = await projectsApi.addEvidence(id, {
+      documentId: old.documentId,
+      chunkId: old.chunkId,
+      content: old.content,
+      displayLabel: changes.displayLabel,
+      annotation: changes.annotation,
+    });
+    await projectsApi.removeEvidence(id, old.id);
+    return created;
+  },
 
   issueAnalyses: (id: number, issueId: number) =>
     get<LegalIssueAnalysisDto[]>(`/api/Projects/${id}/legal-issues/${issueId}/analyses`),
@@ -185,6 +202,14 @@ export const documentsApi = {
 export const ragApi = {
   query: (body: RagQueryRequest, onEvent: (e: StreamEvent) => void, signal?: AbortSignal) =>
     stream("/api/Rag/query-stream", body, onEvent, signal),
+};
+
+/** Versionshistorik – lagras av Workern (se worker/history.ts), inte i backend. */
+export const historyApi = {
+  list: (projectId: number) => get<VersionSummary[]>(`/history/${projectId}`),
+  get: (projectId: number, versionId: number) => get<VersionDetail>(`/history/${projectId}/${versionId}`),
+  snapshot: (projectId: number, body: { label?: string; trigger: VersionTrigger }) =>
+    post<{ version: VersionSummary; created: boolean }>(`/history/${projectId}`, body),
 };
 
 export const feedbackApi = {

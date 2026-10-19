@@ -1,6 +1,6 @@
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, FileText, History } from "lucide-react";
 import clsx from "clsx";
 import { projectsApi } from "@/api/client";
 import type { ProjectDetailDto } from "@/api/types";
@@ -56,7 +56,17 @@ export default function InvestigationPage() {
       <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
         <ArrowLeft className="size-3.5" /> Alla utredningar
       </Link>
-      <h1 className="mb-6 font-serif text-3xl leading-tight">{p.title || "Namnlös utredning"}</h1>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <h1 className="font-serif text-3xl leading-tight">{p.title || "Namnlös utredning"}</h1>
+        <div className="flex gap-1">
+          <Link to={`/utredning/${id}/historik`} className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted hover:bg-sunken hover:text-ink">
+            <History className="size-4" /> Historik
+          </Link>
+          <Link to={`/utredning/${id}/rapport`} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-sm hover:bg-sunken">
+            <FileText className="size-4" /> Rapport
+          </Link>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[220px_1fr]">
         <nav aria-label="Utredningens steg" className="min-w-0">

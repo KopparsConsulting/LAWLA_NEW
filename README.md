@@ -10,8 +10,14 @@ all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
 - **Rättsutredning** – stegvis från ärendebeskrivning via klientens frågor, omständigheter och
   rättsfrågor till rättskällor, delanalyser per rättsfråga och en samlad analys. Lawla kan föreslå
   poster i varje steg; juristen väljer vad som läggs till.
+  Förslagen kan redigeras och styras med egna instruktioner innan de läggs till.
+- **Spårbarhet** – hänvisningar i analyserna är klickbara och visar textstället i underlaget.
+  Hänvisningar som inte finns bland utredningens källor flaggas, så att juristen kan kontrollera dem.
+- **Rapport** – hela utredningen som dokument, att skriva ut som PDF eller ladda ner som Word.
+- **Historik** – versioner av ärendet sparas på begäran och automatiskt inför varje analys, med
+  jämförelse av vad som ändrats.
 - **Rättskällor** – sök och bläddra bland lagar, praxis, förarbeten och doktrin; lägg till avsnitt
-  direkt i en utredning.
+  direkt i en utredning, med egen etikett och kommentar.
 - **Fråga Lawla** – fri fråga med strömmande svar och källhänvisningar.
 
 ## Arkitektur
@@ -19,8 +25,9 @@ all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
 ```
 Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.com)
                 ├─ statiska filer (React-SPA)
-                ├─ /auth/*  inloggning, httpOnly-cookie
-                └─ /api/*   proxy ──► lawla.berge.tech (Bearer-token från cookien)
+                ├─ /auth/*     inloggning, httpOnly-cookie
+                ├─ /api/*      proxy ──► lawla.berge.tech (Bearer-token från cookien)
+                └─ /history/*  versionshistorik ──► D1 (lawla-history)
 ```
 
 | Del | Teknik |
@@ -33,12 +40,14 @@ Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.com)
 src/
   api/          typer (enligt backendens OpenAPI), fetch- och SSE-klient
   features/
-    investigation/  rättsutredningen och dess steg
     documents/      rättskällor
     ask/            Fråga Lawla
     auth/           inloggning, feature-flaggor
+    investigation/  rättsutredningen, dess steg, rapport, historik och källpanel
   components/   UI-komponenter, layout, feedback
-worker/         Cloudflare Worker (proxy, auth, säkerhet)
+  lib/          markdown-tolk, Word-export, formatering
+shared/         typer och logik som delas av frontend och Worker (versioner, jämförelse)
+worker/         Cloudflare Worker (proxy, auth, säkerhet, versionshistorik)
 docs/           driftsättning och önskemål till backend
 ```
 
