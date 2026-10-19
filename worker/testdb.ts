@@ -12,5 +12,13 @@ export function fakeD1(): D1Database {
       return { meta: { changes: r?.changes ?? 0 } };
     },
   });
-  return { exec: async (sql: string) => db.exec(sql), prepare: (sql: string) => stmt(sql) } as unknown as D1Database;
+  return {
+    exec: async (sql: string) => db.exec(sql),
+    prepare: (sql: string) => stmt(sql),
+    batch: async (stmts: { run: () => Promise<unknown> }[]) => {
+      const out = [];
+      for (const s of stmts) out.push(await s.run());
+      return out;
+    },
+  } as unknown as D1Database;
 }

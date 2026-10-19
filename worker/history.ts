@@ -15,7 +15,7 @@
  */
 
 import { buildSnapshot, snapshotCounts, snapshotHash, type ProjectSnapshot, type VersionDetail, type VersionSummary, type VersionTrigger } from "../shared/snapshot";
-import { backendFetch, extractError, isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
+import { backendFetch, ensureSchema, extractError, isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
 import { readMainPrompt } from "./settings";
 
 export interface HistoryEnv {
@@ -26,28 +26,20 @@ export interface HistoryEnv {
 /** Högst så många versioner sparas per ärende; äldre automatiska versioner gallras först. */
 export const MAX_VERSIONS = 200;
 
-const SCHEMA = `CREATE TABLE IF NOT EXISTS project_versions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  project_id INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  label TEXT,
-  trigger TEXT NOT NULL,
-  hash TEXT NOT NULL,
-  counts TEXT NOT NULL,
-  snapshot TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS project_versions_project ON project_versions (project_id, id);`;
-
-let schemaReady: Promise<void> | null = null;
-function ensureSchema(db: D1Database): Promise<void> {
-  schemaReady ??= db.exec(SCHEMA).then(() => undefined);
-  return schemaReady;
-}
-
-/** Bara för tester: glöm att schemat redan är skapat. */
-export function resetSchemaCache() {
-  schemaReady = null;
-}
+// Obs: D1:s exec() kör en query per RAD, så flerradig DDL måste gå via prepare/batch (se ensureSchema i lib.ts).
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS project_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    label TEXT,
+    trigger TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    counts TEXT NOT NULL,
+    snapshot TEXT NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS project_versions_project ON project_versions (project_id, id)",
+];
 
 interface Row {
   id: number;
@@ -89,7 +81,7 @@ export async function handleHistory(request: Request, env: HistoryEnv, url: URL)
     return json({ error: extractError(text) || "Ärendet kunde inte hämtas." }, projectRes.status === 403 ? 403 : projectRes.status === 404 ? 404 : projectRes.status);
   }
 
-  await ensureSchema(env.DB);
+  await ensureSchema(env.DB, "history", SCHEMA);
   const db = env.DB;
 
   if (request.method === "GET" && versionId == null) {

@@ -23,38 +23,30 @@ import {
   type SharedReport,
   type ShareSummary,
 } from "../shared/sharing";
-import { backendFetch, fetchProjectForUser, isSameOriginRequest, json, randomToken, readSessionToken, safeJson } from "./lib";
+import { backendFetch, ensureSchema, fetchProjectForUser, isSameOriginRequest, json, randomToken, readSessionToken, safeJson } from "./lib";
 
 export interface ShareEnv {
   BACKEND_URL: string;
   DB?: D1Database;
 }
 
-const SCHEMA = `CREATE TABLE IF NOT EXISTS report_shares (
-  token TEXT PRIMARY KEY,
-  project_id INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  label TEXT,
-  markdown TEXT NOT NULL,
-  evidence TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  created_by TEXT,
-  expires_at TEXT,
-  revoked_at TEXT,
-  views INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS report_shares_project ON report_shares (project_id, created_at);`;
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS report_shares (
+    token TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    label TEXT,
+    markdown TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    expires_at TEXT,
+    revoked_at TEXT,
+    views INTEGER NOT NULL DEFAULT 0
+  )`,
+  "CREATE INDEX IF NOT EXISTS report_shares_project ON report_shares (project_id, created_at)",
+];
 
-// Per databas-instans, så att tester med ny databas inte ärver en gammal "schemat finns".
-const schemaReady = new WeakMap<D1Database, Promise<void>>();
-function ensureSchema(db: D1Database): Promise<void> {
-  let p = schemaReady.get(db);
-  if (!p) {
-    p = db.exec(SCHEMA).then(() => undefined);
-    schemaReady.set(db, p);
-  }
-  return p;
-}
 
 interface Row {
   token: string;
@@ -122,7 +114,7 @@ async function lookupUserName(env: ShareEnv, token: string): Promise<string | nu
 
 export async function handleShare(request: Request, env: ShareEnv, url: URL): Promise<Response> {
   if (!env.DB) return json({ error: "Delning är inte aktiverad i den här miljön." }, 503);
-  await ensureSchema(env.DB);
+  await ensureSchema(env.DB, "share", SCHEMA);
   const db = env.DB;
 
   /* ─── Publik vy ─────────────────────────────────────────────────────── */

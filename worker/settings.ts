@@ -9,29 +9,21 @@
  */
 
 import { MAIN_PROMPT_MAX, type ProjectSettings } from "../shared/sharing";
-import { fetchProjectForUser, isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
+import { ensureSchema, fetchProjectForUser, isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
 
 export interface SettingsEnv {
   BACKEND_URL: string;
   DB?: D1Database;
 }
 
-const SCHEMA = `CREATE TABLE IF NOT EXISTS project_settings (
-  project_id INTEGER PRIMARY KEY,
-  main_prompt TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL
-);`;
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS project_settings (
+    project_id INTEGER PRIMARY KEY,
+    main_prompt TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+  )`,
+];
 
-// Per databas-instans, så att tester med ny databas inte ärver en gammal "schemat finns".
-const schemaReady = new WeakMap<D1Database, Promise<void>>();
-function ensureSchema(db: D1Database): Promise<void> {
-  let p = schemaReady.get(db);
-  if (!p) {
-    p = db.exec(SCHEMA).then(() => undefined);
-    schemaReady.set(db, p);
-  }
-  return p;
-}
 
 interface Row {
   main_prompt: string;
@@ -40,7 +32,7 @@ interface Row {
 
 /** Läser huvudprompten för ett ärende (används även av historiken för ögonblicksbilder). */
 export async function readMainPrompt(db: D1Database, projectId: number): Promise<string> {
-  await ensureSchema(db);
+  await ensureSchema(db, "settings", SCHEMA);
   const row = await db.prepare("SELECT main_prompt FROM project_settings WHERE project_id = ?").bind(projectId).first<Pick<Row, "main_prompt">>();
   return row?.main_prompt ?? "";
 }
@@ -60,7 +52,7 @@ export async function handleSettings(request: Request, env: SettingsEnv, url: UR
   const access = await fetchProjectForUser(env, projectId, token);
   if (!access.ok) return access.error;
 
-  await ensureSchema(env.DB);
+  await ensureSchema(env.DB, "settings", SCHEMA);
   const db = env.DB;
 
   if (isRead) {

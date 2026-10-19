@@ -93,6 +93,27 @@ export async function fetchProjectForUser(
   return { ok: false, error: json({ error: extractError(text) || "Ärendet kunde inte hämtas." }, status) };
 }
 
+/**
+ * Skapar tabeller vid behov. D1:s `exec()` kör en query per rad och klarar därför inte flerradig
+ * DDL – statements körs i stället som förberedda satser i en batch. Resultatet memoreras per
+ * databas-instans och nyckel, så att tester med ny databas inte ärver "schemat finns".
+ */
+const schemaReady = new WeakMap<D1Database, Map<string, Promise<void>>>();
+export function ensureSchema(db: D1Database, key: string, statements: readonly string[]): Promise<void> {
+  let byKey = schemaReady.get(db);
+  if (!byKey) {
+    byKey = new Map();
+    schemaReady.set(db, byKey);
+  }
+  let p = byKey.get(key);
+  if (!p) {
+    p = db.batch(statements.map((sql) => db.prepare(sql))).then(() => undefined);
+    p.catch(() => byKey!.delete(key)); // försök igen nästa anrop om det gick fel
+    byKey.set(key, p);
+  }
+  return p;
+}
+
 /** Slumpmässig URL-säker token (base64url), t.ex. för delningslänkar. */
 export function randomToken(bytes = 24): string {
   const buf = new Uint8Array(bytes);
