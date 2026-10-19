@@ -15,6 +15,7 @@ const ReportPage = lazy(() => import("@/features/investigation/ReportPage"));
 const DocumentsPage = lazy(() => import("@/features/documents/DocumentsPage"));
 const DocumentPage = lazy(() => import("@/features/documents/DocumentPage"));
 const AskPage = lazy(() => import("@/features/ask/AskPage"));
+const SharedReportPage = lazy(() => import("@/features/share/SharedReportPage"));
 const NotFound = lazy(() => import("@/features/NotFound"));
 
 const queryClient = new QueryClient({
@@ -36,6 +37,8 @@ export default function App() {
             <Suspense fallback={<Spinner />}>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                {/* Delad rapport – öppen för mottagaren utan inloggning. */}
+                <Route path="/delad/:token" element={<SharedReportPage />} />
                 <Route
                   element={
                     <RequireAuth>

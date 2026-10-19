@@ -29,6 +29,8 @@ export interface ProjectSnapshot {
   evidence: SnapshotEvidence[];
   /** Antal samlade analyser som fanns vid tillfället. */
   analysisCount: number;
+  /** Huvudprompt (juristens stående instruktion till Lawla). Saknas i versioner sparade före funktionen. */
+  mainPrompt?: string;
 }
 
 export type VersionTrigger = "manual" | "analysis";
@@ -69,7 +71,7 @@ function items<T extends { id: number; text: string | null; sortOrder?: number }
   return [...(list ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id);
 }
 
-export function buildSnapshot(project: ProjectLike, evidence: EvidenceLike[], analysisCount: number): ProjectSnapshot {
+export function buildSnapshot(project: ProjectLike, evidence: EvidenceLike[], analysisCount: number, mainPrompt = ""): ProjectSnapshot {
   return {
     title: project.title ?? "",
     description: project.description ?? "",
@@ -89,6 +91,7 @@ export function buildSnapshot(project: ProjectLike, evidence: EvidenceLike[], an
         annotation: e.annotation ?? null,
       })),
     analysisCount,
+    mainPrompt,
   };
 }
 
@@ -105,7 +108,7 @@ export function snapshotCounts(s: ProjectSnapshot): VersionSummary["counts"] {
 /* ─── Jämförelse mellan två versioner ───────────────────────────────── */
 
 export interface FieldChange {
-  field: "title" | "description" | "caseOverview";
+  field: "title" | "description" | "caseOverview" | "mainPrompt";
   label: string;
   before: string;
   after: string;
@@ -131,6 +134,7 @@ const FIELD_LABELS: Record<FieldChange["field"], string> = {
   title: "Namn på ärendet",
   description: "Kort beskrivning",
   caseOverview: "Ärendebeskrivning",
+  mainPrompt: "Instruktion till Lawla",
 };
 
 const LIST_LABELS: Record<ListChange["kind"], string> = {
@@ -159,8 +163,10 @@ function diffList(kind: ListChange["kind"], before: { id: number; text: string }
 
 export function diffSnapshots(before: ProjectSnapshot, after: ProjectSnapshot): SnapshotDiff {
   const fields: FieldChange[] = [];
-  for (const field of ["title", "description", "caseOverview"] as const) {
-    if (before[field] !== after[field]) fields.push({ field, label: FIELD_LABELS[field], before: before[field], after: after[field] });
+  for (const field of ["title", "description", "caseOverview", "mainPrompt"] as const) {
+    const b = before[field] ?? "";
+    const a = after[field] ?? "";
+    if (b !== a) fields.push({ field, label: FIELD_LABELS[field], before: b, after: a });
   }
   const lists = [
     diffList("questions", before.questions, after.questions),

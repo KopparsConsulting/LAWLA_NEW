@@ -7,6 +7,7 @@ import type { ExpandedEvidenceDto, ProjectDetailDto, ProjectLegalIssueDto } from
 import { Badge, Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import { CitedMarkdown } from "../SourcePanel";
+import { useMainPrompt } from "../useSettings";
 
 export function IssueAnalysesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const issues = [...(project.legalIssues ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
@@ -51,6 +52,7 @@ function IssueCard({
   evidence: ExpandedEvidenceDto[];
 }) {
   const qc = useQueryClient();
+  const mainPrompt = useMainPrompt(projectId);
   const [open, setOpen] = useState(issue.analysisCount > 0);
   const key = ["issueAnalyses", projectId, issue.id];
   const analyses = useQuery({ queryKey: key, queryFn: () => projectsApi.issueAnalyses(projectId, issue.id), enabled: open });
@@ -58,7 +60,7 @@ function IssueCard({
   const analyze = useMutation({
     mutationFn: async () => {
       await historyApi.snapshot(projectId, { trigger: "analysis" }).catch(() => undefined);
-      return projectsApi.analyzeIssue(projectId, issue.id);
+      return projectsApi.analyzeIssue(projectId, issue.id, mainPrompt);
     },
     onSuccess: () => {
       setOpen(true);

@@ -1,5 +1,6 @@
 import { createSseParser } from "./sse";
 import type { VersionDetail, VersionSummary, VersionTrigger } from "../../shared/snapshot";
+import type { CreateShareRequest, ProjectSettings, SharedReport, ShareSummary } from "../../shared/sharing";
 import type {
   AddEvidenceRequest,
   ChunkDetailDto,
@@ -166,13 +167,37 @@ export const projectsApi = {
 
   issueAnalyses: (id: number, issueId: number) =>
     get<LegalIssueAnalysisDto[]>(`/api/Projects/${id}/legal-issues/${issueId}/analyses`),
-  analyzeIssue: (id: number, issueId: number) =>
-    post<LegalIssueAnalysisDto>(`/api/Projects/${id}/legal-issues/${issueId}/analyze`),
+  /**
+   * Kör delanalys. `instructions` är ärendets huvudprompt; backend ignorerar kroppen i dag
+   * (se docs/BACKEND.md) men tar emot den så fort stödet finns.
+   */
+  analyzeIssue: (id: number, issueId: number, instructions?: string) =>
+    post<LegalIssueAnalysisDto>(`/api/Projects/${id}/legal-issues/${issueId}/analyze`, analysisBody(instructions)),
 
   analyses: (id: number) => get<ProjectAnalysisDto[]>(`/api/Projects/${id}/analyses`),
   /** Kör samlad analys. Strömmar text om backend svarar med SSE, annars returneras analysen. */
-  runAnalysis: (id: number, onEvent: (e: StreamEvent) => void, signal?: AbortSignal) =>
-    stream(`/api/Projects/${id}/analyses`, undefined, onEvent, signal) as Promise<ProjectAnalysisDto | undefined>,
+  runAnalysis: (id: number, onEvent: (e: StreamEvent) => void, signal?: AbortSignal, instructions?: string) =>
+    stream(`/api/Projects/${id}/analyses`, analysisBody(instructions), onEvent, signal) as Promise<ProjectAnalysisDto | undefined>,
+};
+
+function analysisBody(instructions?: string): { instructions: string } | undefined {
+  const text = instructions?.trim();
+  return text ? { instructions: text } : undefined;
+}
+
+/** Ärendets huvudprompt – lagras av Workern (worker/settings.ts), inte i backend. */
+export const settingsApi = {
+  get: (projectId: number) => get<ProjectSettings>(`/settings/${projectId}`),
+  save: (projectId: number, mainPrompt: string) => put<ProjectSettings>(`/settings/${projectId}`, { mainPrompt }),
+};
+
+/** Delning av rapporten via unik länk – lagras av Workern (worker/share.ts). */
+export const shareApi = {
+  list: (projectId: number) => get<ShareSummary[]>(`/share/${projectId}`),
+  create: (projectId: number, body: CreateShareRequest) => post<{ share: ShareSummary }>(`/share/${projectId}`, body),
+  revoke: (projectId: number, token: string) => del(`/share/${projectId}/${encodeURIComponent(token)}`),
+  /** Öppen för mottagaren – ingen inloggning. */
+  view: (token: string) => get<SharedReport>(`/share/view/${encodeURIComponent(token)}`),
 };
 
 export interface DocumentQuery {

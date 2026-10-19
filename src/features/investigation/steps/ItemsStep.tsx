@@ -7,6 +7,7 @@ import { Button, Card, EmptyState, ErrorNote, Input, Textarea } from "@/componen
 import { useToast } from "@/components/toast";
 import { useRagStream } from "@/lib/useRagStream";
 import { buildSuggestPrompt, parseSuggestions, type SuggestKind } from "../suggest";
+import { useMainPrompt } from "../useSettings";
 
 interface Props {
   project: ProjectDetailDto;
@@ -149,6 +150,7 @@ function Suggestions({
   onAdd: (text: string) => Promise<unknown>;
 }) {
   const rag = useRagStream();
+  const mainPrompt = useMainPrompt(project.id);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [instruction, setInstruction] = useState("");
   const [showInstruction, setShowInstruction] = useState(false);
@@ -158,7 +160,7 @@ function Suggestions({
   async function generate() {
     setSuggestions(null);
     try {
-      const res = await rag.run(buildSuggestPrompt(kind, project, instruction));
+      const res = await rag.run(buildSuggestPrompt(kind, project, instruction, mainPrompt));
       setSuggestions(parseSuggestions(res.content, existing.map((e) => e.text)).map((text, i) => ({ id: i, text, state: "new" })));
     } catch {
       /* felet visas via rag.error */
@@ -197,7 +199,7 @@ function Suggestions({
           </p>
           <p className="text-xs text-muted">
             {hasContext
-              ? "Bygger på ärendebeskrivningen och det du redan lagt in. Redigera gärna innan du lägger till."
+              ? `Bygger på ärendebeskrivningen${mainPrompt ? ", din instruktion till Lawla" : ""} och det du redan lagt in. Redigera gärna innan du lägger till.`
               : "Fyll i ärendebeskrivningen först för bättre förslag."}
           </p>
         </div>

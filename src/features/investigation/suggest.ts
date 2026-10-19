@@ -24,16 +24,24 @@ function bullets(items: { text: string | null }[] | null | undefined): string {
   return list.length ? list.map((t) => `- ${t}`).join("\n") : "(inga ännu)";
 }
 
+/** Huvudprompten som ett stycke i en fråga till Lawla, eller inget alls om den är tom. */
+export function mainPromptBlock(mainPrompt?: string | null): string[] {
+  const text = mainPrompt?.trim();
+  return text ? [`Juristens stående instruktion för hela ärendet (följ den i allt du skriver):\n${text}`] : [];
+}
+
 /**
  * Bygger frågan som skickas till RAG-endpointen för att ta fram förslag.
- * `instruction` är juristens egen styrning, t.ex. "Fokusera på jämkning" eller "Mer konkreta frågor".
+ * `instruction` är juristens styrning för just den här omgången, t.ex. "Fokusera på jämkning";
+ * `mainPrompt` är ärendets stående huvudprompt.
  */
-export function buildSuggestPrompt(kind: SuggestKind, project: ProjectDetailDto, instruction?: string): string {
+export function buildSuggestPrompt(kind: SuggestKind, project: ProjectDetailDto, instruction?: string, mainPrompt?: string | null): string {
   const { what, guidance } = KIND_TEXT[kind];
   const steer = instruction?.trim();
   return [
     `Du hjälper en jurist att strukturera en rättsutredning enligt svensk rätt. Föreslå ${what} för ärendet nedan.`,
     guidance,
+    ...mainPromptBlock(mainPrompt),
     ...(steer ? [`Juristens instruktion för förslagen: ${steer}`] : []),
     "Svara ENDAST med en JSON-array av strängar på svenska, högst 6 poster, utan annan text. Upprepa inte sådant som redan finns.",
     "",
@@ -84,9 +92,10 @@ function normalize(s: string) {
 }
 
 /** Fråga för att hitta rättskällor till utredningens rättsfrågor. */
-export function buildSourcesPrompt(project: ProjectDetailDto, focus?: string): string {
+export function buildSourcesPrompt(project: ProjectDetailDto, focus?: string, mainPrompt?: string | null): string {
   return [
     "Vilka rättskällor (lagrum, förarbeten, praxis och doktrin) är relevanta för följande rättsfråga(or)? Redogör kort och hänvisa till källorna.",
+    ...mainPromptBlock(mainPrompt),
     focus ? `Rättsfråga: ${focus}` : `Rättsfrågor:\n${bullets(project.legalIssues)}`,
     `Bakgrund: ${project.caseOverview || project.description || ""}`,
   ].join("\n");

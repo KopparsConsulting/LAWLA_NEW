@@ -8,6 +8,7 @@ import { Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/compon
 import { useToast } from "@/components/toast";
 import { downloadText, formatDateTime, slugify } from "@/lib/format";
 import { CitedMarkdown } from "../SourcePanel";
+import { useMainPrompt } from "../useSettings";
 
 export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const qc = useQueryClient();
@@ -15,6 +16,7 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
   const key = ["analyses", project.id];
   const analyses = useQuery({ queryKey: key, queryFn: () => projectsApi.analyses(project.id) });
   const evidence = useQuery({ queryKey: ["evidence", project.id], queryFn: () => projectsApi.evidence(project.id) });
+  const mainPrompt = useMainPrompt(project.id);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [streamText, setStreamText] = useState("");
   const [running, setRunning] = useState(false);
@@ -55,6 +57,7 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
           }
         },
         controller.signal,
+        mainPrompt,
       );
       await qc.invalidateQueries({ queryKey: key });
       if (result && typeof result === "object" && "id" in result) setSelectedId((result as ProjectAnalysisDto).id);
@@ -95,6 +98,11 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
             ))}
         </div>
         {!ready && <p className="mt-2 text-xs text-muted">Formulera minst en rättsfråga innan du tar fram en samlad analys.</p>}
+        {ready && mainPrompt && (
+          <p className="mt-2 text-xs text-muted">
+            Din instruktion till Lawla skickas med: <span className="italic">“{mainPrompt.length > 120 ? `${mainPrompt.slice(0, 118)}…` : mainPrompt}”</span>
+          </p>
+        )}
         {!aiEnabled && <p className="mt-2 text-xs text-muted">AI-analys är avstängd i plattformen just nu.</p>}
       </Card>
 

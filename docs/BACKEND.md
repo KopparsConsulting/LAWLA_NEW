@@ -64,7 +64,26 @@ Frontenden har byggt dessa funktioner ovanpå dagens API. De blir robustare om b
 - **Export.** Word/PDF skapas i webbläsaren från ärendets data. Om backend vill äga dokumentmallen
   kan `GET /api/Projects/{id}/export?format=docx|pdf` ta över; frontenden skickar då bara vidare.
 
-## 5. Mindre saker
+## 5. Huvudprompt och delning (önskemål)
+
+Två funktioner från ursprungsofferten som frontenden byggt ovanpå Workern i väntan på backendstöd:
+
+- **Huvudprompt (juristens stående instruktion till Lawla för ärendet).** Lagras i dag i D1 av
+  Workern (`worker/settings.ts`) och går in i alla förslag som frontenden tar fram via RAG. För
+  del- och samlad analys skickar frontenden redan `{ "instructions": "…" }` som kropp till
+  `POST /api/Projects/{id}/legal-issues/{iid}/analyze` och `POST /api/Projects/{id}/analyses`.
+  Backend ignorerar kroppen i dag – så fort analysprompten tar hänsyn till `instructions` styr
+  huvudprompten även analyserna. Bäst vore ett fält `mainPrompt` på projektet
+  (`ProjectDetailDto`/`UpdateProjectRequest`) som analyserna alltid använder; då kan Workerns
+  lagring tas bort.
+- **Delning via unik länk.** Workern fryser rapporten (markdown + de rättskällor som hänvisningarna
+  pekar på) i D1 under en slumpmässig token (`worker/share.ts`); `GET /share/view/:token` är öppen
+  utan inloggning, länkar kan tidsbegränsas och återkallas. Ärendedata ligger därmed i Koppars
+  Cloudflare. Långsiktigt bör backend äga detta: `POST /api/Projects/{id}/shares`,
+  `GET/DELETE /api/Projects/{id}/shares/{token}` och en publik `GET /api/shares/{token}` som
+  returnerar det frysta innehållet. Formatet finns i `shared/sharing.ts`.
+
+## 6. Mindre saker
 
 - `RagQueryRequest` saknar `projectId`. Frontenden skickar i dag med ärendets kontext i
   själva frågan. Ett `projectId`-fält skulle ge bättre och billigare svar.

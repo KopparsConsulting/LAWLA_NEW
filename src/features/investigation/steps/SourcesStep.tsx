@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, ErrorNote, Input, Label, Markdown, Spi
 import { useToast } from "@/components/toast";
 import { useRagStream } from "@/lib/useRagStream";
 import { buildSourcesPrompt } from "../suggest";
+import { useMainPrompt } from "../useSettings";
 
 export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const qc = useQueryClient();
@@ -99,6 +100,7 @@ function SourceFinder({
   onAdd: (src: RagSourceDto, passageIndex: number, extra?: { displayLabel?: string; annotation?: string }) => void;
 }) {
   const rag = useRagStream();
+  const mainPrompt = useMainPrompt(project.id);
   const issues = project.legalIssues ?? [];
   const [focus, setFocus] = useState<string>("");
   const [custom, setCustom] = useState("");
@@ -106,7 +108,7 @@ function SourceFinder({
 
   function search(e: FormEvent) {
     e.preventDefault();
-    const q = custom.trim() || buildSourcesPrompt(project, focus || undefined);
+    const q = custom.trim() || buildSourcesPrompt(project, focus || undefined, mainPrompt);
     void rag.run(q).catch(() => {});
   }
 

@@ -75,6 +75,33 @@ export function backendFetch(env: { BACKEND_URL: string }, path: string, init: R
   return fetch(new URL(path, env.BACKEND_URL).toString(), init);
 }
 
+/**
+ * Åtkomstkontroll för Worker-lagrad data (historik, inställningar, delningar):
+ * ärendet hämtas från backend med användarens egen token. Får användaren inte se
+ * ärendet där, får den inte heller röra det som Workern lagrar om det.
+ * Returnerar backendens svar vid lyckad hämtning, annars ett färdigt felsvar.
+ */
+export async function fetchProjectForUser(
+  env: { BACKEND_URL: string },
+  projectId: number,
+  token: string,
+): Promise<{ ok: true; res: Response } | { ok: false; error: Response }> {
+  const res = await backendFetch(env, `/api/Projects/${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.ok) return { ok: true, res };
+  const text = await res.text();
+  const status = res.status === 401 || res.status === 403 || res.status === 404 ? res.status : 502;
+  return { ok: false, error: json({ error: extractError(text) || "Ärendet kunde inte hämtas." }, status) };
+}
+
+/** Slumpmässig URL-säker token (base64url), t.ex. för delningslänkar. */
+export function randomToken(bytes = 24): string {
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  let s = "";
+  for (const b of buf) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,

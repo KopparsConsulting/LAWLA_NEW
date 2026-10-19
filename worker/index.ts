@@ -20,13 +20,15 @@ import {
   withSecurity,
 } from "./lib";
 import { handleHistory } from "./history";
+import { handleSettings } from "./settings";
+import { handleShare } from "./share";
 
 export interface Env {
   ASSETS: Fetcher;
   BACKEND_URL: string;
   /** Publik adress för appen, används som retur-URL vid Google-inloggning. Tom = härleds från requesten. */
   APP_ORIGIN: string;
-  /** D1-databas för versionshistorik (valfri – utan den svarar /history med 503). */
+  /** D1-databas för versionshistorik, huvudprompt och delningslänkar (valfri – utan den svarar de routerna med 503). */
   DB?: D1Database;
 }
 
@@ -37,6 +39,14 @@ export default {
       if (url.pathname.startsWith("/auth/")) return withSecurity(await handleAuth(request, env, url));
       if (url.pathname.startsWith("/api/")) return withSecurity(await handleApi(request, env, url));
       if (url.pathname.startsWith("/history/")) return withSecurity(await handleHistory(request, env, url));
+      if (url.pathname.startsWith("/settings/")) return withSecurity(await handleSettings(request, env, url));
+      if (url.pathname.startsWith("/share/")) return withSecurity(await handleShare(request, env, url));
+      if (url.pathname.startsWith("/delad/")) {
+        // Publik rapportvy: SPA:n som vanligt, men märkt så att sökmotorer inte indexerar den.
+        const res = withSecurity(await env.ASSETS.fetch(request));
+        res.headers.set("X-Robots-Tag", "noindex, nofollow");
+        return res;
+      }
       return env.ASSETS.fetch(request);
     } catch (err) {
       console.error("worker error", err);

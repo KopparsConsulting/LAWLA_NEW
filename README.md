@@ -13,7 +13,11 @@ all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
   Förslagen kan redigeras och styras med egna instruktioner innan de läggs till.
 - **Spårbarhet** – hänvisningar i analyserna är klickbara och visar textstället i underlaget.
   Hänvisningar som inte finns bland utredningens källor flaggas, så att juristen kan kontrollera dem.
+- **Huvudprompt** – en stående instruktion till Lawla per ärende (ton, djup, fokus) som följer med i
+  alla förslag och skickas med till analyserna.
 - **Rapport** – hela utredningen som dokument, att skriva ut som PDF eller ladda ner som Word.
+- **Delning** – rapporten kan delas via unik länk som inte kräver inloggning; innehållet fryses när
+  länken skapas, länken kan tidsbegränsas och återkallas, och visningar räknas.
 - **Historik** – versioner av ärendet sparas på begäran och automatiskt inför varje analys, med
   jämförelse av vad som ändrats.
 - **Rättskällor** – sök och bläddra bland lagar, praxis, förarbeten och doktrin; lägg till avsnitt
@@ -27,7 +31,10 @@ Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.com)
                 ├─ statiska filer (React-SPA)
                 ├─ /auth/*     inloggning, httpOnly-cookie
                 ├─ /api/*      proxy ──► lawla.berge.tech (Bearer-token från cookien)
-                └─ /history/*  versionshistorik ──► D1 (lawla-history)
+                ├─ /history/*  versionshistorik ──► D1 (lawla-history)
+                ├─ /settings/* huvudprompt per ärende ──► D1
+                ├─ /share/*    delningslänkar (frysta rapporter) ──► D1
+                └─ /delad/:token  publik, skrivskyddad rapportvy (SPA)
 ```
 
 | Del | Teknik |
@@ -43,11 +50,12 @@ src/
     documents/      rättskällor
     ask/            Fråga Lawla
     auth/           inloggning, feature-flaggor
-    investigation/  rättsutredningen, dess steg, rapport, historik och källpanel
+    investigation/  rättsutredningen, dess steg, rapport, historik, delning och källpanel
+    share/          publik vy av delad rapport
   components/   UI-komponenter, layout, feedback
   lib/          markdown-tolk, Word-export, formatering
-shared/         typer och logik som delas av frontend och Worker (versioner, jämförelse)
-worker/         Cloudflare Worker (proxy, auth, säkerhet, versionshistorik)
+shared/         typer och logik som delas av frontend och Worker (versioner, jämförelse, delning)
+worker/         Cloudflare Worker (proxy, auth, säkerhet, versionshistorik, huvudprompt, delning)
 docs/           driftsättning och önskemål till backend
 ```
 

@@ -9,9 +9,9 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // Bara API- och auth-anrop går via Workern; allt annat serveras direkt som statiska filer.
-    "run_worker_first": ["/api/*", "/auth/*", "/history/*"]
+    "run_worker_first": ["/api/*", "/auth/*", "/history/*", "/settings/*", "/share/*", "/delad/*"]
   },
-  // Versionshistorik för ärenden (D1 i västra Europa). Tabellen skapas automatiskt av Workern. Se docs/DEPLOY.md.
+  // Versionshistorik, huvudprompt och delningslänkar (D1 i västra Europa). Tabellen skapas automatiskt av Workern. Se docs/DEPLOY.md.
   "d1_databases": [
     { "binding": "DB", "database_name": "lawla-history", "database_id": "c7278c6d-0725-4ff1-acf1-56a94802a5d2" }
   ],

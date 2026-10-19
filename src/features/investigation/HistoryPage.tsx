@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, ErrorNote, Input, Spinner } from "@/co
 import { useToast } from "@/components/toast";
 import { formatDateTime } from "@/lib/format";
 import { buildSnapshot, diffSnapshots, type ProjectSnapshot, type SnapshotDiff, type VersionSummary } from "../../../shared/snapshot";
+import { useMainPrompt } from "./useSettings";
 
 const CURRENT = 0;
 
@@ -20,6 +21,7 @@ export default function HistoryPage() {
   const evidence = useQuery({ queryKey: ["evidence", id], queryFn: () => projectsApi.evidence(id), enabled: Number.isFinite(id) });
   const analyses = useQuery({ queryKey: ["analyses", id], queryFn: () => projectsApi.analyses(id), enabled: Number.isFinite(id) });
   const versions = useQuery({ queryKey: ["history", id], queryFn: () => historyApi.list(id), enabled: Number.isFinite(id) });
+  const mainPrompt = useMainPrompt(id);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [compareTo, setCompareTo] = useState<number>(CURRENT);
@@ -37,8 +39,8 @@ export default function HistoryPage() {
   });
 
   const current: ProjectSnapshot | null = useMemo(
-    () => (project.data ? buildSnapshot(project.data, evidence.data ?? [], analyses.data?.length ?? 0) : null),
-    [project.data, evidence.data, analyses.data],
+    () => (project.data ? buildSnapshot(project.data, evidence.data ?? [], analyses.data?.length ?? 0, mainPrompt) : null),
+    [project.data, evidence.data, analyses.data, mainPrompt],
   );
 
   const list = versions.data ?? [];

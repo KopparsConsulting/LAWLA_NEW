@@ -16,6 +16,7 @@
 
 import { buildSnapshot, snapshotCounts, snapshotHash, type ProjectSnapshot, type VersionDetail, type VersionSummary, type VersionTrigger } from "../shared/snapshot";
 import { backendFetch, extractError, isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
+import { readMainPrompt } from "./settings";
 
 export interface HistoryEnv {
   BACKEND_URL: string;
@@ -119,7 +120,7 @@ export async function handleHistory(request: Request, env: HistoryEnv, url: URL)
     const evidence = evidenceRes.ok ? ((await evidenceRes.json()) as Parameters<typeof buildSnapshot>[1]) : [];
     const analyses = analysesRes.ok ? ((await analysesRes.json()) as unknown[]) : [];
 
-    const snapshot = buildSnapshot(project, evidence, analyses.length);
+    const snapshot = buildSnapshot(project, evidence, analyses.length, await readMainPrompt(db, projectId));
     const hash = snapshotHash(snapshot);
 
     const latest = await db

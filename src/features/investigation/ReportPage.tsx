@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileDown, Printer } from "lucide-react";
+import { ArrowLeft, FileDown, Link2, Printer } from "lucide-react";
 import { projectsApi } from "@/api/client";
 import type { LegalIssueAnalysisDto } from "@/api/types";
 import { Button, Card, ErrorNote, Spinner } from "@/components/ui";
@@ -11,6 +11,7 @@ import { downloadBlob, markdownToDocxBlob } from "@/lib/docxExport";
 import { formatDateTime, slugify } from "@/lib/format";
 import { buildReportMarkdown, REPORT_SECTIONS } from "./report";
 import { CitedMarkdown } from "./SourcePanel";
+import { SharePanel } from "./SharePanel";
 
 const longDate = new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long", year: "numeric" });
 
@@ -44,6 +45,7 @@ export default function ReportPage() {
   const [include, setInclude] = useState<Set<string>>(() => new Set(REPORT_SECTIONS.map((s) => s.key)));
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const sortedAnalyses = useMemo(() => [...(analyses.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [analyses.data]);
   const analysis = sortedAnalyses.find((a) => a.id === analysisId) ?? sortedAnalyses[0] ?? null;
@@ -98,7 +100,10 @@ export default function ReportPage() {
             <h1 className="font-serif text-3xl leading-tight">Rapport</h1>
             <p className="mt-1 text-sm text-muted">Hela utredningen som ett dokument att lämna ifrån sig. Välj vad som ska ingå.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={<Link2 className="size-4" />} onClick={() => setSharing(true)}>
+              Dela länk
+            </Button>
             <Button variant="secondary" icon={<Printer className="size-4" />} onClick={() => window.print()}>
               Skriv ut / PDF
             </Button>
@@ -136,6 +141,10 @@ export default function ReportPage() {
       <article className="rounded-lg border border-line bg-surface p-6 sm:p-10 print:border-0 print:p-0">
         <CitedMarkdown markdown={markdown} evidence={evidence.data ?? []} projectId={id} summary={false} />
       </article>
+
+      {sharing && (
+        <SharePanel projectId={id} title={project.data.title || "Rättsutredning"} markdown={markdown} evidence={evidence.data ?? []} onClose={() => setSharing(false)} />
+      )}
     </div>
   );
 }
