@@ -20,6 +20,10 @@ all data och AI ligger i backend-plattformen (`lawla.berge.tech`).
   länken skapas, länken kan tidsbegränsas och återkallas, och visningar räknas.
 - **Historik** – versioner av ärendet sparas på begäran och automatiskt inför varje analys, med
   jämförelse av vad som ändrats.
+- **Relationsgraf** – interaktiv graf över hur rättsfrågorna, rättskällorna och analyserna hänger
+  ihop: vilka källor varje delanalys och den samlade analysen bygger på, hur källornas dokument
+  hänvisar till varandra, och vilka hänvisningar som saknas i underlaget. Byggs helt i klienten
+  från samma spårbarhetsanalys som rapporten.
 - **Rättskällor** – sök och bläddra bland lagar, praxis, förarbeten och doktrin; lägg till avsnitt
   direkt i en utredning, med egen etikett och kommentar.
 - **Fråga Lawla** – fri fråga med strömmande svar och källhänvisningar.

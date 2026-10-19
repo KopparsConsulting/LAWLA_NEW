@@ -30,6 +30,12 @@
   --accent-soft: #e6ecf5;
   --danger: #a23b2a;
   --ok: #2f6b45;
+  /* Relationsgrafens källtyper */
+  --g-lagrum: #1f3b63;
+  --g-praxis: #8a5a1a;
+  --g-forarbeten: #4f6b3a;
+  --g-doktrin: #6b4a7a;
+  --g-ovrigt: #7a7f8c;
   color-scheme: light;
 }
 
@@ -46,6 +52,11 @@
     --accent-soft: #212b3b;
     --danger: #e08a78;
     --ok: #86c39b;
+    --g-lagrum: #8fb0e0;
+    --g-praxis: #e0b273;
+    --g-forarbeten: #a5c68f;
+    --g-doktrin: #c5a3d8;
+    --g-ovrigt: #9aa0ad;
     color-scheme: dark;
   }
 }

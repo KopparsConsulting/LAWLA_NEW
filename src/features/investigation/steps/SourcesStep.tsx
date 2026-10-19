@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ChevronDown, MessageSquarePlus, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, MessageSquarePlus, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
 import { projectsApi } from "@/api/client";
 import type { AddEvidenceRequest, ExpandedEvidenceDto, ProjectDetailDto, RagSourceDto } from "@/api/types";
 import { Badge, Button, Card, EmptyState, ErrorNote, Input, Label, Markdown, Spinner, Textarea } from "@/components/ui";
@@ -48,7 +48,14 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Underlag i utredningen</h3>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Underlag i utredningen</h3>
+          {(evidence.data?.length ?? 0) > 0 && (
+            <Link to={`/utredning/${project.id}/graf`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+              <Share2 className="size-3.5" /> Visa som relationsgraf
+            </Link>
+          )}
+        </div>
         {evidence.isLoading && <Spinner />}
         {evidence.error && <ErrorNote error={evidence.error} onRetry={() => evidence.refetch()} />}
         {evidence.data?.length === 0 && (
