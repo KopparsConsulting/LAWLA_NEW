@@ -316,3 +316,77 @@ export function excerpt(text: string, max = 180): string {
   const cut = t.lastIndexOf(" ", max);
   return `${t.slice(0, cut > max * 0.6 ? cut : max)}…`;
 }
+
+/* ─── Gå till lagrum ──────────────────────────────────────────────────── */
+
+export interface LagrumQuery {
+  chapter: string | null;
+  paragraph: string | null;
+}
+
+const NUM = String.raw`(\d{1,3}(?:\s?[a-z](?![a-zåäö]))?)`;
+
+/**
+ * Tolkar en sökning som ett lagrum: "7 18", "7:18", "7 kap 18", "7 kap. 18 §", "3 a 2",
+ * "7 18 a" → kapitel + paragraf; "7 kap" → kapitel; "18 §" → paragraf. Ett ensamt tal ("36")
+ * tolkas av läsytan beroende på om källan har kapitel. Annan text ger null (vanlig fritextsökning).
+ */
+export function parseLagrumQuery(raw: string): LagrumQuery | null {
+  const q = raw.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!q) return null;
+  let m = q.match(new RegExp(`^${NUM}\\s*(?:kap(?:\\.|itlet)?\\s*|:\\s*|\\s)${NUM}\\s*(?:§§?|p\\.?)?$`));
+  if (m) return { chapter: norm(m[1]!), paragraph: norm(m[2]!) };
+  m = q.match(new RegExp(`^${NUM}\\s*kap(?:\\.|itlet)?$`));
+  if (m) return { chapter: norm(m[1]!), paragraph: null };
+  m = q.match(new RegExp(`^(?:§\\s*)?${NUM}\\s*(?:§§?)?$`));
+  if (m && (q.includes("§") || /^\d{1,3}(?:\s?[a-z])?$/.test(q))) return { chapter: null, paragraph: norm(m[1]!) };
+  return null;
+}
+
+/** "3a" → "3 a", "18" → "18". */
+function norm(s: string): string {
+  return s.replace(/\s+/g, "").replace(/^(\d+)([a-z])$/, "$1 $2");
+}
+
+/** Läsbar form: "7 kap. 18 §", "7 kap.", "36 §". */
+export function lagrumText(q: LagrumQuery): string {
+  return [q.chapter ? `${q.chapter} kap.` : null, q.paragraph ? `${q.paragraph} §` : null].filter(Boolean).join(" ");
+}
+
+/**
+ * Blocket som ett lagrum pekar på. Matchas mot etiketten (fungerar för både lagen.nu och korpusens
+ * avsnitt, vars etikett kan ha lagens namn före, "Äktenskapsbalk 12 kap. 3 §").
+ * Ett ensamt tal tolkas som paragraf i lagar utan kapitel och som kapitel annars.
+ */
+export function findLagrum(blocks: SourceBlock[], q: LagrumQuery): SourceBlock | null {
+  const hasChapters = blocks.some((b) => b.lagrum && /\bkap\./.test(b.label ?? ""));
+  const { chapter, paragraph } = q;
+  const clean = (s: string | null) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+  if (chapter && paragraph) {
+    const want = `${chapter} kap. ${paragraph} §`;
+    return blocks.find((b) => b.lagrum && (clean(b.label) === want || clean(b.label).endsWith(` ${want}`))) ?? null;
+  }
+  if (chapter) {
+    const re = new RegExp(`(^|\\s)${escapeRe(chapter)} kap\\.(\\s|$)`);
+    return blocks.find((b) => b.kind === "heading" && re.test(clean(b.label))) ?? blocks.find((b) => b.lagrum && re.test(clean(b.label))) ?? null;
+  }
+  if (paragraph) {
+    const want = `${paragraph} §`;
+    const exact = blocks.find((b) => b.lagrum && (clean(b.label) === want || (!/kap\./.test(clean(b.label)) && clean(b.label).endsWith(` ${want}`))));
+    if (exact) return exact;
+    return hasChapters ? (blocks.find((b) => b.lagrum && clean(b.label).endsWith(` ${want}`)) ?? null) : null;
+  }
+  return null;
+}
+
+function escapeRe(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Ett ensamt tal ("7") i en lag med kapitel betyder kapitel; utan kapitel betyder det paragraf. */
+export function resolveBareNumber(blocks: SourceBlock[], q: LagrumQuery, raw: string): LagrumQuery {
+  if (q.chapter || !q.paragraph || raw.includes("§")) return q;
+  const hasChapters = blocks.some((b) => b.lagrum && /\bkap\./.test(b.label ?? ""));
+  return hasChapters ? { chapter: q.paragraph, paragraph: null } : q;
+}

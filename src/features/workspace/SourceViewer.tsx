@@ -6,7 +6,7 @@ import { projectsApi } from "@/api/client";
 import type { AddEvidenceRequest, ExpandedEvidenceDto } from "@/api/types";
 import { Button, Input, Textarea } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import { excerpt, selectionLabel, type SourceBlock } from "../../../shared/sourceDoc";
+import { excerpt, findLagrum, lagrumText, parseLagrumQuery, resolveBareNumber, selectionLabel, type SourceBlock } from "../../../shared/sourceDoc";
 import { evidenceByAnchor, findPassage, searchBlocks, segment, type LoadedSource, type Range } from "./sources";
 
 /** Längsta markering som kan sparas som ett textställe. */
@@ -53,7 +53,16 @@ export function SourceViewer({
   const searchInput = useRef<HTMLInputElement>(null);
 
   const byAnchor = useMemo(() => evidenceByAnchor(evidence, source.key), [evidence, source.key]);
-  const matches = useMemo(() => searchBlocks(source.blocks, query), [source.blocks, query]);
+  // "7 18", "7:18", "7 kap. 18 §", "36 §" … går direkt till lagrummet; annars fritextsökning.
+  const lagrum = useMemo(() => {
+    const parsed = parseLagrumQuery(query);
+    if (!parsed) return null;
+    const q = resolveBareNumber(source.blocks, parsed, query);
+    return { text: lagrumText(q), block: findLagrum(source.blocks, q) };
+  }, [query, source.blocks]);
+  const lagrumHit = lagrum?.block ?? null;
+  const [jump, setJump] = useState(0);
+  const matches = useMemo(() => (lagrumHit ? [] : searchBlocks(source.blocks, query)), [source.blocks, query, lagrumHit]);
   const blockIndex = useMemo(() => new Map(source.blocks.map((b, i) => [b.anchor, i])), [source.blocks]);
   const unplaced = byAnchor.get("") ?? [];
 
@@ -76,6 +85,11 @@ export function SourceViewer({
   /* ── Sökning ── */
   useEffect(() => setCurrent(0), [query]);
   useEffect(() => {
+    if (!lagrumHit) return;
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(lagrumHit.anchor)}"]`);
+    if (el) scrollWithin(scroller.current!, el, "start");
+  }, [lagrumHit, jump]);
+  useEffect(() => {
     if (matches.length === 0) return;
     const el = scroller.current?.querySelector<HTMLElement>(`[data-match="${current}"]`);
     if (el) scrollWithin(scroller.current!, el, "center");
@@ -84,7 +98,8 @@ export function SourceViewer({
   function searchKey(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
-      step(e.shiftKey ? -1 : 1);
+      if (lagrumHit) setJump((n) => n + 1);
+      else step(e.shiftKey ? -1 : 1);
     } else if (e.key === "Escape") setQuery("");
   }
   // Ctrl/⌘+F i läsytan söker i källan i stället för på hela sidan.
@@ -197,13 +212,23 @@ export function SourceViewer({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={searchKey}
-              placeholder={`Sök i ${source.short}`}
-              aria-label={`Sök i ${source.title}`}
-              className="h-8 pl-8 pr-16"
+              placeholder={`Sök i ${source.short} eller gå till t.ex. 7 18`}
+              aria-label={`Sök i ${source.title}, eller ange kapitel och paragraf, t.ex. 7 18`}
+              title="Fritext, eller lagrum: 7 18 = 7 kap. 18 §, 7 kap = kapitlet, 36 § = paragrafen"
+              className={clsx("h-8 pl-8", lagrum ? "pr-28" : "pr-16")}
             />
-            {query.trim().length >= 2 && (
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted" aria-live="polite">
-                {matches.length ? `${current + 1} av ${matches.length >= 2000 ? "2000+" : matches.length}` : "0 träffar"}
+            {(lagrum || query.trim().length >= 2) && (
+              <span
+                className={clsx("absolute right-2 top-1/2 max-w-[7.5rem] -translate-y-1/2 truncate text-xs tabular-nums", lagrumHit ? "font-medium text-accent" : "text-muted")}
+                aria-live="polite"
+              >
+                {lagrumHit
+                  ? `→ ${lagrum!.text}`
+                  : matches.length
+                    ? `${current + 1} av ${matches.length >= 2000 ? "2000+" : matches.length}`
+                    : lagrum
+                      ? `${lagrum.text} saknas`
+                      : "0 träffar"}
               </span>
             )}
           </div>
@@ -246,7 +271,7 @@ export function SourceViewer({
               evidence={byAnchor.get(b.anchor)}
               searchHits={matchesByAnchor.get(b.anchor)}
               current={current}
-              flash={flash === b.anchor}
+              flash={flash === b.anchor || lagrumHit?.anchor === b.anchor}
               pendingText={pending && (pending.first.anchor === b.anchor || pending.last.anchor === b.anchor) ? pending.text : undefined}
               onAdd={addWhole}
             />

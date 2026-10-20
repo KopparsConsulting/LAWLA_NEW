@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildToc,
+  findLagrum,
+  lagrumText,
+  parseLagrumQuery,
+  resolveBareNumber,
   chunksToBlocks,
   lagenUriIn,
   lagrumRange,
@@ -127,5 +131,32 @@ describe("nycklar", () => {
       ["chunk-8", false, "a"],
       ["chunk-9", true, "text"],
     ]);
+  });
+});
+
+describe("gå till lagrum", () => {
+  const blocks = parseLagenMarkdown(UTLL, "https://lagen.nu/2005:716");
+  it("tolkar skrivsätt", () => {
+    const want = { chapter: "7", paragraph: "18" };
+    for (const q of ["7 18", "7:18", "7 kap 18", "7 kap. 18 §", "7kap 18§", " 7  18 "]) expect(parseLagrumQuery(q)).toEqual(want);
+    expect(parseLagrumQuery("3 a 2")).toEqual({ chapter: "3 a", paragraph: "2" });
+    expect(parseLagrumQuery("4 1a")).toEqual({ chapter: "4", paragraph: "1 a" });
+    expect(parseLagrumQuery("7 kap")).toEqual({ chapter: "7", paragraph: null });
+    expect(parseLagrumQuery("36 §")).toEqual({ chapter: null, paragraph: "36" });
+    expect(parseLagrumQuery("36")).toEqual({ chapter: null, paragraph: "36" });
+    expect(parseLagrumQuery("barnets bästa")).toBeNull();
+    expect(parseLagrumQuery("2005:716")).toBeNull();
+  });
+  it("hittar paragraf, kapitel och ensamt tal", () => {
+    expect(findLagrum(blocks, { chapter: "4", paragraph: "1 a" })?.anchor).toBe("K4P1a");
+    expect(findLagrum(blocks, { chapter: "4", paragraph: "9" })).toBeNull();
+    expect(findLagrum(blocks, { chapter: "4", paragraph: null })?.anchor).toBe("K4");
+    expect(findLagrum(blocks, resolveBareNumber(blocks, { chapter: null, paragraph: "4" }, "4"))?.anchor).toBe("K4");
+    expect(findLagrum(blocks, { chapter: null, paragraph: "3" })?.anchor).toBe("K4P3");
+    const avtl = parseLagenMarkdown("# Avtalslag\n\n**36 §** Avtalsvillkor får jämkas.", "https://lagen.nu/1915:218");
+    expect(findLagrum(avtl, resolveBareNumber(avtl, { chapter: null, paragraph: "36" }, "36"))?.anchor).toBe("P36");
+    const corpus = chunksToBlocks([{ id: 1, chunkIndex: 0, displayLabel: "Äktenskapsbalk 12 kap. 3 §", content: "x" }]);
+    expect(findLagrum(corpus, { chapter: "12", paragraph: "3" })?.anchor).toBe("chunk-1");
+    expect(lagrumText({ chapter: "7", paragraph: "18" })).toBe("7 kap. 18 §");
   });
 });
