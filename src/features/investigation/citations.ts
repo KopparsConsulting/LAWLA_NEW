@@ -126,6 +126,7 @@ const CASE_PATTERNS: RegExp[] = [
   /\bHFD\s+\d{4}:\d+/g,
   /\bAD\s+\d{4}\s+nr\s+\d+/g,
   /\bMÖD\s+\d{4}:\d+/g,
+  /\bMIG\s+\d{4}:\d+/g,
   /\bMD\s+\d{4}:\d+/g,
   /\bprop\.?\s+\d{4}(?:\/\d{2,4})?:\d+/gi,
   /\bSOU\s+\d{4}:\d+/g,

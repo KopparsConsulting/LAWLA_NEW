@@ -149,7 +149,12 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
                 </Link>
               </div>
             </div>
-            <CitedMarkdown markdown={selected.outputContent ?? ""} evidence={evidence.data ?? []} projectId={project.id} />
+            <CitedMarkdown
+              markdown={selected.outputContent ?? ""}
+              evidence={evidence.data ?? []}
+              projectId={project.id}
+              complement={{ onRerun: aiEnabled && ready ? () => void run() : undefined, rerunning: running, rerunLabel: "Ta fram ny analys" }}
+            />
             <p className="mt-8 border-t border-line pt-3 text-xs text-muted">
               AI-genererat utkast. Kontrollera hänvisningar och slutsatser innan det används i rådgivning.{" "}
               <Link to={`/utredning/${project.id}/historik`} className="inline-flex items-center gap-1 underline decoration-dotted hover:text-ink">

@@ -91,6 +91,10 @@ body {
 }
 .prose-lawla h1, .prose-lawla h2, .prose-lawla h3 { font-family: var(--font-serif); }
 
+/* Markdown inuti en ruta (t.ex. en osäkerhetspunkt): ingen marginal före första/efter sista blocket */
+.prose-tight .prose-lawla > :first-child { margin-top: 0; }
+.prose-tight .prose-lawla > :last-child { margin-bottom: 0; }
+
 /* Hänvisningar i AI-text som leder till underlaget */
 .prose-lawla a.citation { cursor: pointer; }
 

@@ -6,6 +6,8 @@ import { documentsApi } from "@/api/client";
 import type { ExpandedEvidenceDto } from "@/api/types";
 import { Markdown, Spinner } from "@/components/ui";
 import { linkifyCitations, type CitationReport, type CitationTarget } from "./citations";
+import { splitUncertainties } from "./uncertainties";
+import { UncertaintySection, type ComplementOptions } from "./UncertaintyFields";
 import { LAGEN_STATUS_TEXT, LagenCheck, LagenStatusIcon, lagenSummary, useLagenVerify } from "./lagen";
 
 /**
@@ -18,18 +20,31 @@ export function CitedMarkdown({
   evidence,
   projectId,
   summary = true,
+  complement,
 }: {
   markdown: string;
   evidence: ExpandedEvidenceDto[];
   projectId: number;
   summary?: boolean;
+  /** Ger fält under varje punkt i analysens osäkerhetsavsnitt, för att komplettera med omständigheter. */
+  complement?: ComplementOptions;
 }) {
   const { markdown: linked, report } = useMemo(() => linkifyCitations(markdown, evidence), [markdown, evidence]);
+  const hasComplement = !!complement;
+  const split = useMemo(() => (hasComplement ? splitUncertainties(linked) : null), [hasComplement, linked]);
   const [target, setTarget] = useState<CitationTarget | null>(null);
 
   return (
     <>
-      <Markdown onCitation={setTarget}>{linked}</Markdown>
+      {split && complement ? (
+        <>
+          {split.before.trim() && <Markdown onCitation={setTarget}>{split.before}</Markdown>}
+          <UncertaintySection key={markdown} split={split} projectId={projectId} onCitation={setTarget} options={complement} />
+          {split.after.trim() && <Markdown onCitation={setTarget}>{split.after}</Markdown>}
+        </>
+      ) : (
+        <Markdown onCitation={setTarget}>{linked}</Markdown>
+      )}
       {summary && <CitationSummary report={report} onOpen={setTarget} />}
       {target && <SourcePanel target={target} evidence={evidence} projectId={projectId} onClose={() => setTarget(null)} />}
     </>

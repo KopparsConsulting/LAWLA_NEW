@@ -130,7 +130,12 @@ function IssueCard({
             {latest && (
               <>
                 <p className="mb-2 text-xs text-muted">Senaste analys · {formatDateTime(latest.createdAt)}</p>
-                <CitedMarkdown markdown={latest.outputContent ?? ""} evidence={evidence} projectId={projectId} />
+                <CitedMarkdown
+                  markdown={latest.outputContent ?? ""}
+                  evidence={evidence}
+                  projectId={projectId}
+                  complement={{ onRerun: aiEnabled ? () => analyze.mutate() : undefined, rerunning: analyze.isPending, rerunLabel: "Analysera igen" }}
+                />
               </>
             )}
             {older.length > 0 && (
