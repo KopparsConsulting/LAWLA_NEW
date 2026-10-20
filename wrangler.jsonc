@@ -9,7 +9,7 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // Bara API- och auth-anrop går via Workern; allt annat serveras direkt som statiska filer.
-    "run_worker_first": ["/api/*", "/auth/*", "/history/*", "/settings/*", "/share/*", "/delad/*"]
+    "run_worker_first": ["/api/*", "/auth/*", "/history/*", "/settings/*", "/share/*", "/delad/*", "/lagen/*"]
   },
   // Versionshistorik, huvudprompt och delningslänkar (D1 i västra Europa). Tabellen skapas automatiskt av Workern. Se docs/DEPLOY.md.
   "d1_databases": [

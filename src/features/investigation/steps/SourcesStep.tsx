@@ -9,6 +9,7 @@ import { useToast } from "@/components/toast";
 import { useRagStream } from "@/lib/useRagStream";
 import { buildSourcesPrompt } from "../suggest";
 import { useMainPrompt } from "../useSettings";
+import { LagenFinder } from "../lagen";
 
 export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const qc = useQueryClient();
@@ -94,6 +95,8 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
           }}
         />
       )}
+
+      <LagenFinder projectId={project.id} initialQuery={prefill} />
 
       <ManualSource onAdd={(body) => add.mutate(body)} busy={add.isPending} initialLabel={prefill} />
     </div>

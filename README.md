@@ -38,6 +38,7 @@ Webbläsare ──► Cloudflare Worker (lawla.kopparsconsulting.com)
                 ├─ /history/*  versionshistorik ──► D1 (lawla-history)
                 ├─ /settings/* huvudprompt per ärende ──► D1
                 ├─ /share/*    delningslänkar (frysta rapporter) ──► D1
+                ├─ /lagen/*    verifiering av hänvisningar ──► lagen.nu (cachat)
                 └─ /delad/:token  publik, skrivskyddad rapportvy (SPA)
 ```
 

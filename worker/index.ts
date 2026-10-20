@@ -22,6 +22,7 @@ import {
 import { handleHistory } from "./history";
 import { handleSettings } from "./settings";
 import { handleShare } from "./share";
+import { handleLagen } from "./lagen";
 
 export interface Env {
   ASSETS: Fetcher;
@@ -41,6 +42,7 @@ export default {
       if (url.pathname.startsWith("/history/")) return withSecurity(await handleHistory(request, env, url));
       if (url.pathname.startsWith("/settings/")) return withSecurity(await handleSettings(request, env, url));
       if (url.pathname.startsWith("/share/")) return withSecurity(await handleShare(request, env, url));
+      if (url.pathname.startsWith("/lagen/")) return withSecurity(await handleLagen(request, url));
       if (url.pathname.startsWith("/delad/")) {
         // Publik rapportvy: SPA:n som vanligt, men märkt så att sökmotorer inte indexerar den.
         const res = withSecurity(await env.ASSETS.fetch(request));

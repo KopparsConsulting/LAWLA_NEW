@@ -1,5 +1,6 @@
 import { createSseParser } from "./sse";
 import type { VersionDetail, VersionSummary, VersionTrigger } from "../../shared/snapshot";
+import type { LagenResolution, LagenSearchResult, LagenText } from "../../shared/lagen";
 import type { CreateShareRequest, ProjectSettings, SharedReport, ShareSummary } from "../../shared/sharing";
 import type {
   AddEvidenceRequest,
@@ -235,6 +236,17 @@ export const historyApi = {
   get: (projectId: number, versionId: number) => get<VersionDetail>(`/history/${projectId}/${versionId}`),
   snapshot: (projectId: number, body: { label?: string; trigger: VersionTrigger }) =>
     post<{ version: VersionSummary; created: boolean }>(`/history/${projectId}`, body),
+};
+
+/**
+ * Kontroll mot lagen.nu via Workern (worker/lagen.ts) – verifierar hänvisningar som saknas i
+ * underlaget och hämtar textstället. Bara själva hänvisningen skickas, inga ärendedata.
+ */
+export const lagenApi = {
+  resolve: (q: string) => get<LagenResolution>(`/lagen/resolve?q=${enc(q)}`),
+  verify: (texts: string[]) => post<{ results: LagenResolution[] }>("/lagen/verify", { texts }),
+  text: (uri: string) => get<LagenText>(`/lagen/text?uri=${enc(uri)}`),
+  search: (q: string, limit = 5) => get<LagenSearchResult>(`/lagen/search?q=${enc(q)}&limit=${limit}`),
 };
 
 export const feedbackApi = {

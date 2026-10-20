@@ -6,6 +6,7 @@ import { documentsApi } from "@/api/client";
 import type { ExpandedEvidenceDto } from "@/api/types";
 import { Markdown, Spinner } from "@/components/ui";
 import { linkifyCitations, type CitationReport, type CitationTarget } from "./citations";
+import { LAGEN_STATUS_TEXT, LagenCheck, LagenStatusIcon, lagenSummary, useLagenVerify } from "./lagen";
 
 /**
  * Visar AI-text där hänvisningar är klickbara och leder till underlaget.
@@ -36,6 +37,9 @@ export function CitedMarkdown({
 }
 
 export function CitationSummary({ report, onOpen }: { report: CitationReport; onOpen: (t: CitationTarget) => void }) {
+  // Hänvisningar som saknas i underlaget kontrolleras automatiskt mot lagen.nu.
+  const lagen = useLagenVerify(report.unmatched);
+  const lagenLine = lagenSummary(lagen.data, report.unmatched);
   if (report.citations.length === 0 && report.unused.length === 0) return null;
   return (
     <div className="mt-6 space-y-3 border-t border-line pt-4 text-sm">
@@ -62,14 +66,21 @@ export function CitationSummary({ report, onOpen }: { report: CitationReport; on
             <AlertTriangle className="size-4" aria-hidden />
             {report.unmatched.length === 1 ? "1 hänvisning finns inte i underlaget" : `${report.unmatched.length} hänvisningar finns inte i underlaget`}
           </p>
-          <p className="mb-2 text-xs text-muted">Lawla kan hänvisa till källor som inte är kontrollerade. Verifiera dem eller lägg till dem som rättskällor.</p>
+          <p className="mb-2 text-xs text-muted">
+            Lawla kan hänvisa till källor som inte är kontrollerade. Hänvisningarna kontrolleras mot lagen.nu – klicka för att se textstället och lägga
+            till det som rättskälla.
+            {lagen.isLoading && " Kontrollerar…"}
+            {lagenLine && <span className="mt-1 block font-medium text-ink">lagen.nu: {lagenLine}.</span>}
+          </p>
           <ul className="flex flex-wrap gap-1.5">
             {report.unmatched.map((text) => (
               <li key={text}>
                 <button
                   onClick={() => onOpen({ kind: "search", query: text })}
+                  title={lagen.data?.get(text) ? LAGEN_STATUS_TEXT[lagen.data.get(text)!.status] : undefined}
                   className="inline-flex items-center gap-1 rounded-full border border-danger/40 px-2.5 py-1 text-xs text-danger hover:bg-danger/10"
                 >
+                  <LagenStatusIcon status={lagen.data?.get(text)?.status} loading={lagen.isLoading} className="size-3" />
                   {text}
                 </button>
               </li>
@@ -196,14 +207,15 @@ function MissingCitation({ query, projectId }: { query: string; projectId: numbe
           underlaget – eller en felaktig hänvisning från AI:n.
         </p>
       </div>
+      <LagenCheck query={query} projectId={projectId} />
       <Link
         to={`/dokument?q=${encodeURIComponent(query)}`}
-        className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+        className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-2 text-sm font-medium hover:bg-sunken"
       >
-        <Search className="size-4" /> Sök i rättskällor
+        <Search className="size-4" /> Sök i Lawlas rättskällor
       </Link>
       <p className="text-xs text-muted">
-        Hittar du källan kan du lägga till avsnittet i utredningen därifrån, eller via{" "}
+        Finns källan i Lawlas korpus är det bättre att lägga till avsnittet därifrån, eller via{" "}
         <Link to={`/utredning/${projectId}/rattskallor`} className="underline">
           steget Rättskällor
         </Link>

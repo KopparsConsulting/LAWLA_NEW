@@ -24,6 +24,7 @@ import type { DocumentReferenceDto, LegalIssueAnalysisDto } from "@/api/types";
 import { Button, Card, EmptyState, ErrorNote, Spinner } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { SourcePanel } from "./SourcePanel";
+import { LAGEN_STATUS_TEXT, LagenStatusIcon, useLagenResolve } from "./lagen";
 import type { CitationTarget } from "./citations";
 import { CoverageMatrix } from "./CoverageMatrix";
 import { LEVEL_COLOR, LevelIcon, nodeFill, SOURCE_COLORS } from "./graphUi";
@@ -777,6 +778,7 @@ export function NodeDetails({
   adding: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const lagen = useLagenResolve(node.kind === "missing" ? node.label : null);
   useEffect(() => {
     // I smal vy hamnar panelen under grafen/matrisen – rulla dit.
     if (isNarrow()) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -869,6 +871,23 @@ export function NodeDetails({
             {node.documentId != null
               ? "Hänvisningen finns inte bland utredningens rättskällor, men dokumentet finns i Lawlas korpus och källorna hänvisar dit. Lägg till det eller kontrollera hänvisningen."
               : "Hänvisningen finns inte bland utredningens rättskällor och kunde inte hittas bland källornas hänvisningar. Verifiera den eller lägg till källan i underlaget."}
+          </p>
+        )}
+        {node.kind === "missing" && (
+          <p className="mt-2 flex items-start gap-1.5 text-xs leading-snug">
+            <LagenStatusIcon status={lagen.data?.status} loading={lagen.isLoading} className="mt-px size-3.5" />
+            <span>
+              {lagen.isLoading
+                ? "Kontrollerar på lagen.nu…"
+                : lagen.data
+                  ? `${LAGEN_STATUS_TEXT[lagen.data.status]}${lagen.data.status === "found" && lagen.data.title ? `: ${[lagen.data.pinLabel, lagen.data.title].filter(Boolean).join(" ")}` : ""}. `
+                  : "lagen.nu kunde inte nås. "}
+              {!lagen.isLoading && (
+                <button className="text-accent underline" onClick={() => onOpenSource({ kind: "search", query: node.label })}>
+                  {lagen.data?.status === "found" ? "Visa textstället och lägg till" : "Kontrollera"}
+                </button>
+              )}
+            </span>
           </p>
         )}
         {node.kind === "suggested" && (

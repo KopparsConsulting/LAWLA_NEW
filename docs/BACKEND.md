@@ -109,3 +109,23 @@ helt i klienten. Det fungerar, men blir exaktare och snabbare med:
 - Taggar: den gamla frontenden anropade `/api/Tags`, som inte finns. v2 använder bara
   `tag`-parametern på `GET /api/Documents`.
 - CORS behövs inte för v2 – all trafik går server-till-server från Workern.
+
+## 8. Källor från lagen.nu (önskemål)
+
+Hänvisningar i analyserna som inte finns i underlaget kontrolleras nu mot lagen.nu:s öppna API
+(`https://lagen.nu/api/v1`, via Workern i `worker/lagen.ts`, cachat ett dygn). Bara själva
+hänvisningen skickas till lagen.nu, inga ärendedata. Status per hänvisning: finns / finns inte
+(lagen.nu har fastställt att t.ex. paragrafen saknas – trolig AI-fabrikation) / kunde inte tolkas.
+
+Hittas källan kan juristen lägga till textstället i underlaget. Det görs med
+`POST /api/Projects/{id}/evidence` **utan `documentId` och `chunkId`**, med textstället i `content`,
+hänvisningen i `displayLabel` och lagen.nu-adressen i `annotation`. **Ej verifierat mot backend** –
+bekräfta att en källa utan dokument accepteras och att `content` används i analyserna. Bättre på sikt:
+
+- Ett fält för extern källa på rättskällan, t.ex. `canonicalReference` eller `externalUrl` i
+  `AddEvidenceRequest` (finns redan som `canonicalReference` i `ProjectEvidenceDto`).
+- Att backend själv kan importera ett dokument från lagen.nu till korpusen (lagen.nu har
+  `GET /api/v1/document?uri=…&format=md` och datadumpar via `GET /api/v1/dumps`), så att källan får
+  `documentId`, avsnitt och referenser som övriga dokument.
+- Att analysprompten använder lagen.nu:s `POST /api/v1/citations/extract` för att få strukturerade
+  hänvisningar (se §4) – då blir både spårbarheten och kontrollen exakt i stället för heuristisk.
