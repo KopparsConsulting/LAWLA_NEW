@@ -23,13 +23,15 @@ import { handleHistory } from "./history";
 import { handleSettings } from "./settings";
 import { handleShare } from "./share";
 import { handleLagen } from "./lagen";
+import { handleNotes } from "./notes";
+import { handleRiksdagen } from "./riksdagen";
 
 export interface Env {
   ASSETS: Fetcher;
   BACKEND_URL: string;
   /** Publik adress för appen, används som retur-URL vid Google-inloggning. Tom = härleds från requesten. */
   APP_ORIGIN: string;
-  /** D1-databas för versionshistorik, huvudprompt och delningslänkar (valfri – utan den svarar de routerna med 503). */
+  /** D1-databas för versionshistorik, huvudprompt, delningslänkar och anteckningar (valfri – utan den svarar de routerna med 503). */
   DB?: D1Database;
 }
 
@@ -43,6 +45,8 @@ export default {
       if (url.pathname.startsWith("/settings/")) return withSecurity(await handleSettings(request, env, url));
       if (url.pathname.startsWith("/share/")) return withSecurity(await handleShare(request, env, url));
       if (url.pathname.startsWith("/lagen/")) return withSecurity(await handleLagen(request, url));
+      if (url.pathname.startsWith("/riksdagen/")) return withSecurity(await handleRiksdagen(request, url));
+      if (url.pathname.startsWith("/notes/")) return withSecurity(await handleNotes(request, env, url));
       if (url.pathname.startsWith("/delad/")) {
         // Publik rapportvy: SPA:n som vanligt, men märkt så att sökmotorer inte indexerar den.
         const res = withSecurity(await env.ASSETS.fetch(request));

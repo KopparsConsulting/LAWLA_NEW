@@ -101,6 +101,13 @@ describe("etiketter", () => {
     );
   });
 
+  it("förarbeten: kommentar till paragraf anges som kommentar, inte som lagrum", () => {
+    const b = parseLagenMarkdown("# Prop\n\n## 13 Författningskommentar\n\n**5 kap. Uppehållstillstånd**\n\n**18 §**\n\nParagrafen anger …", "https://lagen.nu/prop/2025/26:301");
+    const par = b.find((x) => x.lagrum)!;
+    expect(par.label).toBe("5 kap. 18 §");
+    expect(selectionLabel(par, par, { title: "Skärpta krav", identifier: "Prop. 2025/26:301", isLaw: false })).toBe("Prop. 2025/26:301, kommentaren till 5 kap. 18 §");
+  });
+
   it("förarbeten: beteckning och avsnitt", () => {
     const h = { anchor: "t", kind: "text" as const, level: 3, label: "5.3 Verkställighet", lagrum: false, text: "" };
     expect(selectionLabel(h, h, { title: "Ny instans- och processordning", identifier: "Prop. 2004/05:170" })).toBe("Prop. 2004/05:170 – 5.3 Verkställighet");

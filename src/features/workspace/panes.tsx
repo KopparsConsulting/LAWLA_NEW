@@ -7,10 +7,12 @@ export interface PaneSizes {
   left: number;
   /** Analysen till höger när en källa är öppen, px. */
   right: number;
+  /** Andel av mittenytan för den vänstra källan när två visas sida vid sida. */
+  split: number;
 }
 
 const KEY = "lawla.arbetsyta.paneler";
-const DEFAULTS: PaneSizes = { left: 260, right: 440 };
+const DEFAULTS: PaneSizes = { left: 260, right: 440, split: 0.5 };
 
 export function usePaneSizes() {
   const [sizes, setSizes] = useState<PaneSizes>(() => {

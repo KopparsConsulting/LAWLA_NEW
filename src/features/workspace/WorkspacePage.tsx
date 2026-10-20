@@ -14,6 +14,7 @@ import clsx from "clsx";
 import {
   ArrowLeft,
   BookOpen,
+  Columns2,
   ExternalLink,
   FileText,
   ListTree,
@@ -37,8 +38,12 @@ import type { CitationTarget } from "@/features/investigation/citations";
 import { CitedMarkdown, SourcePanel } from "@/features/investigation/SourcePanel";
 import { fragmentOf, parseSourceKey, sourceKey, stripFragment, type SourceRef } from "../../../shared/sourceDoc";
 import { clamp, Splitter, useNarrow, usePaneSizes, useWidth } from "./panes";
+import type { LoadedSource } from "./sources";
 import { evidenceByAnchor, evidenceLocation, useSource } from "./sources";
 import { SourceViewer, type ScrollRequest } from "./SourceViewer";
+import { AddForarbeteDialog, AddMenu, type AddChoice } from "./AddForarbete";
+import { WorkspaceContext, type ScrollTarget } from "./Forarbeten";
+import { NotesButton, NotesPanel, useNotes } from "./Notes";
 import { Toc } from "./Toc";
 
 type MobileView = "innehall" | "kalla" | "analys";
@@ -65,6 +70,13 @@ export default function WorkspacePage() {
   }, [params]);
   const activeKey = params.get("aktiv") && tabs.some((t) => sourceKey(t) === params.get("aktiv")) ? params.get("aktiv")! : tabs[0] ? sourceKey(tabs[0]) : null;
   const activeRef = tabs.find((t) => sourceKey(t) === activeKey) ?? null;
+  // Andra källan sida vid sida (?bredvid=…), aldrig samma som den aktiva.
+  const besideKey = params.get("bredvid") && params.get("bredvid") !== activeKey && tabs.some((t) => sourceKey(t) === params.get("bredvid")) ? params.get("bredvid")! : null;
+  const besideRef = tabs.find((t) => sourceKey(t) === besideKey) ?? null;
+  const [focusPane, setFocusPane] = useState<"primary" | "beside">("primary");
+  const [notesOpen, setNotesOpen] = useState<Set<string>>(() => new Set());
+  const [addChoice, setAddChoice] = useState<Exclude<AddChoice, { kind: "search" }> | null>(null);
+  const notes = useNotes(id);
 
   const [scrollReq, setScrollReq] = useState<(ScrollRequest & { key: string }) | null>(() => {
     const till = params.get("till");
@@ -72,6 +84,8 @@ export default function WorkspacePage() {
     return till && aktiv ? { key: aktiv, anchor: till, nonce: 1 } : null;
   });
   const scrollTops = useRef(new Map<string, number>());
+  // Avsnittet man läser i varje källa – så att läget behålls när läsytan byggs om.
+  const readAnchors = useRef(new Map<string, string>());
   const [activeAnchor, setActiveAnchor] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<"innehall" | "underlag">("innehall");
   const [leftOpen, setLeftOpen] = useState(true);
@@ -97,25 +111,33 @@ export default function WorkspacePage() {
   );
 
   const openSource = useCallback(
-    (ref: SourceRef, anchor?: string | null) => {
+    (ref: SourceRef, anchor?: string | null, opts: { beside?: boolean; text?: string[] | null } = {}) => {
       const key = sourceKey(ref);
       updateParams((p) => {
         if (!p.getAll("flik").includes(key)) p.append("flik", key);
-        p.set("aktiv", key);
+        if (opts.beside && p.get("aktiv") && p.get("aktiv") !== key) p.set("bredvid", key);
+        else {
+          if (p.get("bredvid") === key) p.delete("bredvid");
+          p.set("aktiv", key);
+        }
       });
+      setFocusPane(opts.beside ? "beside" : "primary");
       setActiveAnchor(null);
-      if (anchor) setScrollReq({ key, anchor, nonce: Date.now() });
+      if (anchor || opts.text?.length) setScrollReq({ key, anchor: anchor ?? null, text: opts.text ?? null, nonce: Date.now() });
       if (narrow) setMobileView("kalla");
       setRightOpen(true);
     },
     [updateParams, narrow],
   );
+  const openBeside = useCallback((ref: SourceRef, target?: ScrollTarget) => openSource(ref, target?.anchor ?? null, { beside: !narrow, text: target?.text ?? null }), [openSource, narrow]);
+  const ctx = useMemo(() => ({ projectId: id, openBeside }), [id, openBeside]);
 
   function closeTab(key: string) {
     updateParams((p) => {
       const rest = p.getAll("flik").filter((k) => k !== key);
       p.delete("flik");
       rest.forEach((k) => p.append("flik", k));
+      if (p.get("bredvid") === key) p.delete("bredvid");
       if (p.get("aktiv") === key) {
         const i = tabs.findIndex((t) => sourceKey(t) === key);
         const next = rest[Math.min(i, rest.length - 1)];
@@ -151,11 +173,13 @@ export default function WorkspacePage() {
 
   const source = useSource(activeRef);
   const loaded = source.data && source.data.key === activeKey ? source.data : null;
-  const marked = useMemo(() => new Set(loaded ? [...evidenceByAnchor(evidenceList, loaded.key).keys()] : []), [loaded, evidenceList]);
+  const beside = useSource(besideRef);
+  const besideLoaded = beside.data && beside.data.key === besideKey ? beside.data : null;
+  // Innehållsförteckningen följer den källa man senast arbetade i.
+  const tocSource = focusPane === "beside" && besideLoaded ? besideLoaded : loaded;
+  const marked = useMemo(() => new Set(tocSource ? [...evidenceByAnchor(evidenceList, tocSource.key).keys()] : []), [tocSource, evidenceList]);
 
-  // Byt till fliken som en hänvisning pekade på innan scroll-begäran används.
-  const viewerScroll = scrollReq && scrollReq.key === activeKey ? scrollReq : null;
-  useEffect(() => setActiveAnchor(null), [activeKey]);
+  useEffect(() => setActiveAnchor(null), [activeKey, besideKey, focusPane]);
 
   if (!Number.isFinite(id)) return <Navigate to="/" replace />;
   if (project.isLoading) return <Spinner />;
@@ -172,35 +196,96 @@ export default function WorkspacePage() {
     <TabBar
       tabs={tabs}
       activeKey={activeKey}
-      onSelect={(k) => updateParams((p) => p.set("aktiv", k))}
+      besideKey={besideKey}
+      canBeside={!narrow}
+      onSelect={(k) =>
+        updateParams((p) => {
+          // Väljer man källan som står bredvid byter de plats.
+          if (p.get("bredvid") === k && activeKey) p.set("bredvid", activeKey);
+          p.set("aktiv", k);
+        })
+      }
+      onBeside={(k) => {
+        updateParams((p) => p.set("bredvid", k));
+        setFocusPane("beside");
+      }}
       onClose={closeTab}
-      onAdd={() => setPicker(true)}
+      onChoose={(c) => (c.kind === "search" ? setPicker(true) : setAddChoice(c))}
     />
   );
 
-  const viewer = activeRef ? (
-    source.isLoading || !loaded ? (
-      source.error ? (
+  const noteFor = (key: string) => notes.data?.find((n) => n.sourceKey === key);
+  const toggleNotes = (key: string) =>
+    setNotesOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const renderViewer = (ref: SourceRef | null, q: ReturnType<typeof useSource>, l: LoadedSource | null, pane: "primary" | "beside") => {
+    if (!ref) return <EmptySource onOpen={() => setPicker(true)} />;
+    if (q.error)
+      return (
         <div className="p-6">
-          <ErrorNote error={source.error} onRetry={() => source.refetch()} />
+          <ErrorNote error={q.error} onRetry={() => q.refetch()} />
         </div>
-      ) : (
-        <Spinner label="Hämtar rättskällan…" />
-      )
-    ) : (
-      <SourceViewer
-        key={loaded.key}
-        source={loaded}
-        evidence={evidenceList}
-        projectId={id}
-        scrollTo={viewerScroll}
-        initialScrollTop={viewerScroll ? undefined : scrollTops.current.get(loaded.key)}
-        onScroll={(top) => scrollTops.current.set(loaded.key, top)}
-        onActiveAnchor={setActiveAnchor}
+      );
+    if (!l) return <Spinner label="Hämtar rättskällan…" />;
+    const req = scrollReq && scrollReq.key === l.key ? scrollReq : null;
+    return (
+      <div className="h-full min-h-0" onFocusCapture={() => setFocusPane(pane)} onMouseDown={() => setFocusPane(pane)}>
+        <SourceViewer
+          key={l.key}
+          source={l}
+          evidence={evidenceList}
+          projectId={id}
+          scrollTo={req}
+          initialScrollTop={req ? undefined : scrollTops.current.get(l.key)}
+          initialAnchor={req ? undefined : readAnchors.current.get(l.key)}
+          onScroll={(top) => scrollTops.current.set(l.key, top)}
+          onActiveAnchor={(a) => {
+            readAnchors.current.set(l.key, a);
+            if (pane === focusPane || (pane === "primary" && !besideLoaded)) setActiveAnchor(a);
+          }}
+          toolbar={<NotesButton open={notesOpen.has(l.key)} hasNote={!!noteFor(l.key)} onClick={() => toggleNotes(l.key)} />}
+          footer={
+            notesOpen.has(l.key) ? (
+              <NotesPanel key={l.key} projectId={id} sourceKey={l.key} sourceName={l.short} note={noteFor(l.key)} onClose={() => toggleNotes(l.key)} />
+            ) : undefined
+          }
+        />
+      </div>
+    );
+  };
+
+  const viewer = besideRef && !narrow ? (
+    <div className="flex h-full min-h-0">
+      <div style={{ flexBasis: `${Math.round(sizes.split * 100)}%` }} className={clsx("min-h-0 min-w-0 shrink grow-0", focusPane === "primary" && "ring-1 ring-inset ring-accent/20")}>
+        {renderViewer(activeRef, source, loaded, "primary")}
+      </div>
+      <Splitter
+        label="Fördelning mellan källorna"
+        side="left"
+        onDelta={(d) => setSizes((s) => ({ ...s, split: clamp(s.split + d / Math.max(1, width - leftW - rightW), 0.2, 0.8) }))}
+        onReset={() => setSizes((s) => ({ ...s, split: 0.5 }))}
       />
-    )
+      <div className={clsx("flex min-h-0 min-w-0 flex-1 flex-col border-l border-line", focusPane === "beside" && "ring-1 ring-inset ring-accent/20")}>
+        <div className="flex items-center gap-2 border-b border-line bg-sunken/50 px-3 py-1 text-xs text-muted">
+          <Columns2 className="size-3.5" aria-hidden /> Bredvid
+          <button
+            onClick={() => updateParams((p) => p.delete("bredvid"))}
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface hover:text-ink"
+            aria-label="Stäng sidovyn"
+          >
+            <X className="size-3" /> Stäng
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">{renderViewer(besideRef, beside, besideLoaded, "beside")}</div>
+      </div>
+    </div>
   ) : (
-    <EmptySource onOpen={() => setPicker(true)} />
+    renderViewer(activeRef, source, loaded, "primary")
   );
 
   const left = (
@@ -223,17 +308,24 @@ export default function WorkspacePage() {
       </div>
       <div className="min-h-0 flex-1 pt-2">
         {leftTab === "innehall" ? (
-          loaded ? (
-            <Toc
-              key={loaded.key}
-              entries={loaded.toc}
-              active={activeAnchor}
-              marked={marked}
-              onJump={(anchor) => {
-                setScrollReq({ key: loaded.key, anchor, nonce: Date.now() });
-                if (narrow) setMobileView("kalla");
-              }}
-            />
+          tocSource ? (
+            <>
+              {besideLoaded && (
+                <p className="truncate px-3 pb-1.5 text-[11px] text-muted" title={tocSource.title}>
+                  {tocSource.short}
+                </p>
+              )}
+              <Toc
+                key={tocSource.key}
+                entries={tocSource.toc}
+                active={activeAnchor}
+                marked={marked}
+                onJump={(anchor) => {
+                  setScrollReq({ key: tocSource.key, anchor, nonce: Date.now() });
+                  if (narrow) setMobileView("kalla");
+                }}
+              />
+            </>
           ) : (
             <p className="px-3 text-xs leading-5 text-muted">
               {activeRef ? "Hämtar innehållet…" : "Öppna en rättskälla så visas dess innehållsförteckning här."}
@@ -261,6 +353,7 @@ export default function WorkspacePage() {
   );
 
   return (
+    <WorkspaceContext.Provider value={ctx}>
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden bg-paper lg:h-dvh">
       <header className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <Link to={`/utredning/${id}/analys`} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted hover:bg-sunken hover:text-ink">
@@ -359,8 +452,19 @@ export default function WorkspacePage() {
           }}
         />
       )}
+      {addChoice && (
+        <AddForarbeteDialog
+          choice={addChoice}
+          onClose={() => setAddChoice(null)}
+          onOpen={(ref, anchor) => {
+            setAddChoice(null);
+            openSource(ref, anchor);
+          }}
+        />
+      )}
       {fallback && <SourcePanel target={fallback} evidence={evidenceList} projectId={id} onClose={() => setFallback(null)} />}
     </div>
+    </WorkspaceContext.Provider>
   );
 }
 
@@ -369,32 +473,60 @@ export default function WorkspacePage() {
 function TabBar({
   tabs,
   activeKey,
+  besideKey,
+  canBeside,
   onSelect,
+  onBeside,
   onClose,
-  onAdd,
+  onChoose,
 }: {
   tabs: SourceRef[];
   activeKey: string | null;
+  besideKey: string | null;
+  canBeside: boolean;
   onSelect: (k: string) => void;
+  onBeside: (k: string) => void;
   onClose: (k: string) => void;
-  onAdd: () => void;
+  onChoose: (c: AddChoice) => void;
 }) {
   return (
     <div role="tablist" aria-label="Öppna rättskällor" className="flex items-end gap-1 overflow-x-auto border-b border-line bg-sunken/50 px-2 pt-1.5">
       {tabs.map((t) => {
         const key = sourceKey(t);
-        return <TabChip key={key} refx={t} active={key === activeKey} onSelect={() => onSelect(key)} onClose={() => onClose(key)} />;
+        return (
+          <TabChip
+            key={key}
+            refx={t}
+            active={key === activeKey}
+            beside={key === besideKey}
+            onSelect={() => onSelect(key)}
+            onBeside={canBeside && key !== activeKey && key !== besideKey ? () => onBeside(key) : undefined}
+            onClose={() => onClose(key)}
+          />
+        );
       })}
-      <button onClick={onAdd} className="mb-1 inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink" title="Öppna rättskälla">
-        <Plus className="size-3.5" /> {tabs.length === 0 && "Öppna rättskälla"}
-      </button>
+      <AddMenu onChoose={onChoose} compact={tabs.length > 0} />
     </div>
   );
 }
 
-function TabChip({ refx, active, onSelect, onClose }: { refx: SourceRef; active: boolean; onSelect: () => void; onClose: () => void }) {
+function TabChip({
+  refx,
+  active,
+  beside,
+  onSelect,
+  onBeside,
+  onClose,
+}: {
+  refx: SourceRef;
+  active: boolean;
+  beside: boolean;
+  onSelect: () => void;
+  onBeside?: () => void;
+  onClose: () => void;
+}) {
   // Namnet hämtas ur samma cache som läsytan (laddas först när fliken öppnas).
-  const source = useSource(active ? refx : null);
+  const source = useSource(active || beside ? refx : null);
   const qc = useQueryClient();
   const cached = qc.getQueryData<{ short: string; title: string }>(["ws-source", sourceKey(refx)]);
   const name = source.data?.short ?? cached?.short ?? fallbackName(refx);
@@ -404,14 +536,25 @@ function TabChip({ refx, active, onSelect, onClose }: { refx: SourceRef; active:
       aria-selected={active}
       className={clsx(
         "group flex max-w-[220px] shrink-0 items-center gap-1 rounded-t-md border border-b-0 pl-2.5 pr-1 text-xs",
-        active ? "-mb-px border-line bg-surface py-1.5 font-medium text-ink" : "border-transparent py-1 text-muted hover:bg-surface/70 hover:text-ink",
+        active
+          ? "-mb-px border-line bg-surface py-1.5 font-medium text-ink"
+          : beside
+            ? "-mb-px border-dashed border-line bg-surface/80 py-1.5 text-ink"
+            : "border-transparent py-1 text-muted hover:bg-surface/70 hover:text-ink",
       )}
       title={source.data?.title ?? cached?.title}
     >
       <button onClick={onSelect} onAuxClick={(e) => e.button === 1 && onClose()} className="min-w-0 truncate">
         {refx.kind === "lagen" ? <span className="mr-1 text-[10px] uppercase tracking-wide text-muted">lagen.nu</span> : null}
+        {refx.kind === "riksdagen" ? <span className="mr-1 text-[10px] uppercase tracking-wide text-muted">riksdagen</span> : null}
         {name}
       </button>
+      {beside && <Columns2 className="size-3 text-muted" aria-label="Visas bredvid" />}
+      {onBeside && (
+        <button onClick={onBeside} aria-label={`Visa ${name} bredvid`} title="Visa bredvid" className="rounded p-0.5 text-muted opacity-0 hover:bg-sunken hover:text-ink group-hover:opacity-100">
+          <Columns2 className="size-3" />
+        </button>
+      )}
       <button onClick={onClose} aria-label={`Stäng ${name}`} className="rounded p-0.5 text-muted opacity-60 hover:bg-sunken hover:text-ink group-hover:opacity-100">
         <X className="size-3" />
       </button>
@@ -420,7 +563,9 @@ function TabChip({ refx, active, onSelect, onClose }: { refx: SourceRef; active:
 }
 
 function fallbackName(ref: SourceRef): string {
-  return ref.kind === "doc" ? `Dokument ${ref.documentId}` : ref.uri.replace("https://lagen.nu/", "");
+  if (ref.kind === "doc") return `Dokument ${ref.documentId}`;
+  if (ref.kind === "riksdagen") return ref.dokId;
+  return ref.uri.replace("https://lagen.nu/", "");
 }
 
 function Rail({ side, onOpen, label }: { side: "left" | "right"; onOpen: () => void; label: string }) {
@@ -460,7 +605,7 @@ function EvidencePanel({ evidence, loading, onOpen }: { evidence: ExpandedEviden
     for (const e of evidence) {
       const loc = evidenceLocation(e);
       const key = loc ? sourceKey(loc.ref) : "egna";
-      const name = e.documentTitle ?? (loc?.ref.kind === "lagen" ? loc.ref.uri.replace("https://", "") : "Egna källor");
+      const name = e.documentTitle ?? (loc?.ref.kind === "lagen" ? loc.ref.uri.replace("https://", "") : loc?.ref.kind === "riksdagen" ? `riksdagen.se ${loc.ref.dokId}` : "Egna källor");
       const g = m.get(key) ?? { name, items: [] };
       g.items.push(e);
       m.set(key, g);

@@ -7,6 +7,9 @@
  *   GET  /lagen/text?uri=https://lagen.nu/1915:218#P36 → LagenText
  *   GET  /lagen/search?q=…&limit=5       → LagenSearchResult
  *   GET  /lagen/doc?uri=https://lagen.nu/2005:716 → LagenDocument (hela dokumentet, för arbetsytan)
+ *   GET  /lagen/forarbeten?uri=https://lagen.nu/2005:716#K7P18 → ProvisionForarbeten (ändringshistorik)
+ *   GET  /lagen/kommentar?prop=Prop. 2025/26:301&law=2005:716&name=utlänningslag&lagrum=5 kap. 18 §[&alt=…]
+ *        → ProvisionCommentary (författningskommentaren till bestämmelsen)
  *
  * Varför via Workern: svaren cachas i Cloudflare (samma hänvisning slås upp en gång per dygn
  * oavsett antal användare), bara inloggade användare kan använda proxyn, och lagen.nu får
@@ -26,6 +29,17 @@ import {
   type LagenSearchResult,
   type LagenText,
 } from "../shared/lagen";
+import {
+  findCommentary,
+  forarbeteUri,
+  lagrumFromAnchor,
+  lagrumLabel,
+  parseLagrumLabel,
+  provisionHistory,
+  type Amendment,
+  type ProvisionCommentary,
+  type ProvisionForarbeten,
+} from "../shared/forarbeten";
 import { isSameOriginRequest, json, readSessionToken, safeJson } from "./lib";
 
 const USER_AGENT = "Lawla/2.0 (+https://lawla.kopparsconsulting.com)";
@@ -71,6 +85,35 @@ interface MarkdownDocument {
   pinpoint_label?: string | null;
   source_url?: string | null;
   markdown?: string;
+}
+
+/** Lagens JSON-form: metadata om ändringsförfattningar och strukturen (för senaste ändring per paragraf). */
+interface StructuredDocument {
+  uri: string;
+  label?: string | null;
+  title?: string | null;
+  artifact?: {
+    amendments?: { forarbeten?: unknown[]; properties?: Record<string, unknown> }[];
+    structure?: unknown[];
+  };
+}
+
+/** Ändringsförfattningen som lagtexten anger sist i paragrafen ("Lag (2021:765)."). */
+export function latestAmendment(structure: unknown[] | undefined, anchor: string): string | null {
+  let node: unknown = null;
+  const walk = (n: unknown) => {
+    if (node || !n || typeof n !== "object") return;
+    const o = n as { id?: string; children?: unknown[] };
+    if (o.id === anchor) {
+      node = o;
+      return;
+    }
+    o.children?.forEach(walk);
+  };
+  structure?.forEach(walk);
+  if (!node) return null;
+  const all = [...JSON.stringify(node).matchAll(/Lag \((\d{4}:\d+)\)/g)];
+  return all.length ? all[all.length - 1]![1]! : null;
 }
 
 /* ─── Hämtning ────────────────────────────────────────────────────────── */
@@ -225,6 +268,51 @@ export async function handleLagen(request: Request, url: URL): Promise<Response>
           source: doc.source ?? null,
           ...trimMarkdown(md, LAGEN_DOC_MAX),
           sourceUrl: doc.source_url && /^https:\/\//.test(doc.source_url) ? doc.source_url : null,
+        };
+        return json(out, 200, PUBLIC_CACHE);
+      }
+      case "GET /lagen/forarbeten": {
+        const raw = url.searchParams.get("uri") ?? "";
+        if (!isLagenUri(raw) || !raw.includes("#")) return json({ error: "Ange en paragraf, t.ex. https://lagen.nu/2005:716#K7P18." }, 400);
+        const [lawUri, anchor] = raw.split("#") as [string, string];
+        const target = lagrumFromAnchor(anchor);
+        if (!target) return json({ error: "Ankaret pekar inte på en paragraf." }, 400);
+        const doc = await lagenGet<StructuredDocument>("/api/v1/document", { uri: lawUri }, TTL_TEXT);
+        const amendments: Amendment[] = (doc.artifact?.amendments ?? []).map((a) => ({
+          sfs: String(a.properties?.["dcterms:identifier"] ?? ""),
+          forarbeten: Array.isArray(a.forarbeten) ? a.forarbeten.map(String) : [],
+          andrar: typeof a.properties?.["rpubl:andrar"] === "string" ? (a.properties["rpubl:andrar"] as string) : null,
+          ikraft: typeof a.properties?.["rpubl:ikrafttradandedatum"] === "string" ? (a.properties["rpubl:ikrafttradandedatum"] as string) : null,
+        }));
+        const baseSfs = doc.label ?? amendments[0]?.sfs ?? "";
+        const history = provisionHistory(target, amendments, baseSfs, latestAmendment(doc.artifact?.structure, anchor)).map((e) => ({
+          ...e,
+          propUri: e.prop ? forarbeteUri(e.prop) : null,
+        }));
+        const out: ProvisionForarbeten = { lawUri, lawTitle: clean(doc.title, 300), lawSfs: doc.label?.replace(/^SFS\s*/, "") ?? null, lagrum: lagrumLabel(target), history };
+        return json(out, 200, PUBLIC_CACHE);
+      }
+      case "GET /lagen/kommentar": {
+        const prop = (url.searchParams.get("prop") ?? "").slice(0, 60);
+        const propUri = forarbeteUri(prop);
+        const lagrum = parseLagrumLabel(url.searchParams.get("lagrum") ?? "");
+        const alt = parseLagrumLabel(url.searchParams.get("alt") ?? "");
+        if (!propUri || !lagrum) return json({ error: "Ange proposition och lagrum." }, 400);
+        const law = { sfs: url.searchParams.get("law")?.slice(0, 20) || null, name: url.searchParams.get("name")?.slice(0, 120) || null };
+        const doc = await lagenGet<MarkdownDocument>("/api/v1/document", { uri: propUri, format: "md" }, TTL_TEXT);
+        const md = doc.markdown ?? "";
+        let used = lagrum;
+        let found = findCommentary(md, law, lagrum);
+        if (found.length === 0 && alt) {
+          found = findCommentary(md, law, alt);
+          used = alt;
+        }
+        const out: ProvisionCommentary = {
+          prop,
+          propUri,
+          propTitle: clean(doc.title, 300),
+          lagrum: found.length ? lagrumLabel(used) : null,
+          found: found.slice(0, 4).map((c) => ({ ...c, markdown: c.markdown.slice(0, 40_000) })),
         };
         return json(out, 200, PUBLIC_CACHE);
       }

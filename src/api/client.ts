@@ -1,6 +1,9 @@
 import { createSseParser } from "./sse";
 import type { VersionDetail, VersionSummary, VersionTrigger } from "../../shared/snapshot";
 import type { LagenDocument, LagenResolution, LagenSearchResult, LagenText } from "../../shared/lagen";
+import type { ProvisionCommentary, ProvisionForarbeten } from "../../shared/forarbeten";
+import type { SourceNote } from "../../shared/notes";
+import type { ForarbeteTyp } from "../../shared/riksdagen";
 import type { CreateShareRequest, ProjectSettings, SharedReport, ShareSummary } from "../../shared/sharing";
 import type {
   AddEvidenceRequest,
@@ -247,7 +250,28 @@ export const lagenApi = {
   verify: (texts: string[]) => post<{ results: LagenResolution[] }>("/lagen/verify", { texts }),
   text: (uri: string) => get<LagenText>(`/lagen/text?uri=${enc(uri)}`),
   doc: (uri: string) => get<LagenDocument>(`/lagen/doc?uri=${enc(uri)}`),
+  /** Ändringshistorik och förarbeten för en paragraf (uri med ankare, t.ex. …/2005:716#K7P18). */
+  forarbeten: (uri: string) => get<ProvisionForarbeten>(`/lagen/forarbeten?uri=${enc(uri)}`),
+  kommentar: (q: { prop: string; law: string | null; name: string | null; lagrum: string; alt?: string | null }) => {
+    const p = new URLSearchParams({ prop: q.prop, lagrum: q.lagrum });
+    if (q.law) p.set("law", q.law);
+    if (q.name) p.set("name", q.name);
+    if (q.alt) p.set("alt", q.alt);
+    return get<ProvisionCommentary>(`/lagen/kommentar?${p}`);
+  },
   search: (q: string, limit = 5) => get<LagenSearchResult>(`/lagen/search?q=${enc(q)}&limit=${limit}`),
+};
+
+/** Förarbeten från Riksdagens öppna data via Workern (worker/riksdagen.ts). */
+export const riksdagenApi = {
+  find: (typ: ForarbeteTyp, bet: string) => get<{ dokId: string; title: string | null; identifier: string | null; typ: string }>(`/riksdagen/find?typ=${typ}&bet=${enc(bet)}`),
+  doc: (id: string) => get<LagenDocument>(`/riksdagen/doc?id=${enc(id)}`),
+};
+
+/** Anteckningar per rättskälla i arbetsytan – lagras av Workern (worker/notes.ts). */
+export const notesApi = {
+  list: (projectId: number) => get<SourceNote[]>(`/notes/${projectId}`),
+  save: (projectId: number, sourceKey: string, text: string) => put<SourceNote | undefined>(`/notes/${projectId}`, { sourceKey, text }),
 };
 
 export const feedbackApi = {

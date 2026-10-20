@@ -1,19 +1,23 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { BookmarkCheck, BookPlus, ChevronDown, ChevronUp, ExternalLink, Search, X } from "lucide-react";
+import { BookmarkCheck, BookPlus, ChevronDown, ChevronUp, ExternalLink, ScrollText, Search, X } from "lucide-react";
 import { projectsApi } from "@/api/client";
 import type { AddEvidenceRequest, ExpandedEvidenceDto } from "@/api/types";
 import { Button, Input, Textarea } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { excerpt, findLagrum, lagrumText, parseLagrumQuery, resolveBareNumber, selectionLabel, type SourceBlock } from "../../../shared/sourceDoc";
+import { ForarbetenPanel } from "./Forarbeten";
 import { evidenceByAnchor, findPassage, searchBlocks, segment, type LoadedSource, type Range } from "./sources";
 
 /** Längsta markering som kan sparas som ett textställe. */
 const MAX_SELECTION = 20_000;
 
 export interface ScrollRequest {
-  anchor: string;
+  /** Blockets ankare – eller tomt och `text` anges. */
+  anchor: string | null;
+  /** Rulla till första block som innehåller texterna i tur och ordning, t.ex. [avsnittsrubrik, första orden]. */
+  text?: string[] | null;
   /** Ändras för varje begäran, så att samma ställe kan visas igen. */
   nonce: number;
 }
@@ -34,14 +38,23 @@ export function SourceViewer({
   projectId,
   scrollTo,
   initialScrollTop,
+  initialAnchor,
   onScroll,
   onActiveAnchor,
+  toolbar,
+  footer,
 }: {
+  /** Extra knappar i verktygsraden (t.ex. anteckningar). */
+  toolbar?: ReactNode;
+  /** Visas under texten, t.ex. anteckningar. */
+  footer?: ReactNode;
   source: LoadedSource;
   evidence: ExpandedEvidenceDto[];
   projectId: number;
   scrollTo: ScrollRequest | null;
   initialScrollTop?: number;
+  /** Avsnitt att börja vid (bevaras när läsytan byggs om, t.ex. vid sida-vid-sida). Går före initialScrollTop. */
+  initialAnchor?: string | null;
   onScroll?: (top: number) => void;
   onActiveAnchor?: (anchor: string) => void;
 }) {
@@ -50,7 +63,17 @@ export function SourceViewer({
   const [current, setCurrent] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  // Paragrafer med öppen förarbetspanel (bara lagar från lagen.nu har ändringshistorik).
+  const [forarbeten, setForarbeten] = useState<Set<string>>(() => new Set());
+  const hasForarbeten = source.ref.kind === "lagen" && (source.lagenKind === "lag" || source.lagenKind === "forordning");
+  const toggleForarbeten = useCallback((anchor: string) => setForarbeten((prev) => {
+    const next = new Set(prev);
+    if (next.has(anchor)) next.delete(anchor);
+    else next.add(anchor);
+    return next;
+  }), []);
   const searchInput = useRef<HTMLInputElement>(null);
+  const isLaw = source.ref.kind === "doc" || (source.ref.kind === "lagen" && (source.lagenKind == null || source.lagenKind === "lag" || source.lagenKind === "forordning"));
 
   const byAnchor = useMemo(() => evidenceByAnchor(evidence, source.key), [evidence, source.key]);
   // "7 18", "7:18", "7 kap. 18 §", "36 §" … går direkt till lagrummet; annars fritextsökning.
@@ -68,19 +91,25 @@ export function SourceViewer({
 
   /* ── Rulla till ställe (hänvisning, innehållsförteckning) ── */
   useLayoutEffect(() => {
-    if (initialScrollTop && scroller.current) scroller.current.scrollTop = initialScrollTop;
+    const root = scroller.current;
+    if (!root) return;
+    const el = initialAnchor ? root.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(initialAnchor)}"]`) : null;
+    if (el) scrollWithin(root, el, "start");
+    else if (initialScrollTop) root.scrollTop = initialScrollTop;
     // bara vid montering
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (!scrollTo) return;
-    const el = scroller.current?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(scrollTo.anchor)}"]`);
+    const anchor = scrollTo.anchor ?? (scrollTo.text?.length ? findByText(source.blocks, scrollTo.text) : null);
+    if (!anchor) return;
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`);
     if (!el) return;
     scrollWithin(scroller.current!, el, "start");
-    setFlash(scrollTo.anchor);
+    setFlash(anchor);
     const t = setTimeout(() => setFlash(null), 2200);
     return () => clearTimeout(t);
-  }, [scrollTo, source.key]);
+  }, [scrollTo, source.key, source.blocks]);
 
   /* ── Sökning ── */
   useEffect(() => setCurrent(0), [query]);
@@ -144,6 +173,8 @@ export function SourceViewer({
     if (!root || !sel || sel.isCollapsed || sel.rangeCount === 0) return setPending(null);
     const range = sel.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
+    const container = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (container?.closest("[data-noselect]")) return;
     const text = sel.toString().replace(/\u00a0/g, " ").trim();
     if (text.length < 2) return setPending(null);
     const blockOf = (n: Node | null) => (n instanceof Element ? n : n?.parentElement)?.closest<HTMLElement>("[data-anchor]");
@@ -162,11 +193,11 @@ export function SourceViewer({
       first,
       last,
       text: text.slice(0, MAX_SELECTION),
-      label: selectionLabel(first, last, { title: source.title, identifier: source.identifier }),
+      label: selectionLabel(first, last, { title: source.title, identifier: source.identifier, isLaw }),
       top: rect.bottom - box.top + root.scrollTop + 8,
       left: Math.max(8, Math.min(rect.left - box.left, box.width - 380)),
     });
-  }, [blockIndex, source.blocks, source.title, source.identifier]);
+  }, [blockIndex, source.blocks, source.title, source.identifier, isLaw]);
 
   function addWhole(block: SourceBlock, target: HTMLElement) {
     const root = scroller.current!;
@@ -176,7 +207,7 @@ export function SourceViewer({
       first: block,
       last: block,
       text: block.text,
-      label: selectionLabel(block, block, { title: source.title, identifier: source.identifier }),
+      label: selectionLabel(block, block, { title: source.title, identifier: source.identifier, isLaw }),
       top: rect.bottom - box.top + root.scrollTop + 4,
       left: Math.max(8, Math.min(rect.left - box.left - 300, box.width - 380)),
     });
@@ -199,12 +230,13 @@ export function SourceViewer({
             {[source.typeLabel, source.identifier].filter(Boolean).join(" · ")}
             {source.externalUrl && (
               <a href={source.externalUrl} target="_blank" rel="noreferrer noopener" className="ml-2 inline-flex items-center gap-0.5 text-accent hover:underline">
-                {source.ref.kind === "lagen" ? "lagen.nu" : "Originalkälla"} <ExternalLink className="size-3" />
+                {source.ref.kind === "lagen" ? "lagen.nu" : source.ref.kind === "riksdagen" ? "riksdagen.se" : "Originalkälla"} <ExternalLink className="size-3" />
               </a>
             )}
           </p>
         </div>
         <div className="flex w-full items-center gap-1 sm:w-auto">
+          {toolbar}
           <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden />
             <Input
@@ -212,7 +244,7 @@ export function SourceViewer({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={searchKey}
-              placeholder={`Sök i ${source.short} eller gå till t.ex. 7 18`}
+              placeholder={isLaw ? `Sök – eller 7 18` : `Sök i ${source.short}`}
               aria-label={`Sök i ${source.title}, eller ange kapitel och paragraf, t.ex. 7 18`}
               title="Fritext, eller lagrum: 7 18 = 7 kap. 18 §, 7 kap = kapitlet, 36 § = paragrafen"
               className={clsx("h-8 pl-8", lagrum ? "pr-28" : "pr-16")}
@@ -274,6 +306,7 @@ export function SourceViewer({
               flash={flash === b.anchor || lagrumHit?.anchor === b.anchor}
               pendingText={pending && (pending.first.anchor === b.anchor || pending.last.anchor === b.anchor) ? pending.text : undefined}
               onAdd={addWhole}
+              forarbeten={hasForarbeten && b.lagrum ? { open: forarbeten.has(b.anchor), toggle: toggleForarbeten, lawUri: source.ref.kind === "lagen" ? source.ref.uri : "", lawTitle: source.title } : undefined}
             />
           ))}
         </article>
@@ -291,6 +324,7 @@ export function SourceViewer({
           />
         )}
       </div>
+      {footer}
     </div>
   );
 }
@@ -303,6 +337,23 @@ function scrollWithin(root: HTMLElement, el: HTMLElement, where: "start" | "cent
   const offset = el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
   const top = where === "start" ? offset - 12 : offset - root.clientHeight / 2 + el.offsetHeight / 2;
   root.scrollTo({ top: Math.max(0, top), behavior: where === "start" ? "auto" : "smooth" });
+}
+
+const normText = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Första block som innehåller texterna i tur och ordning (rubrik, sedan text efter den). */
+export function findByText(blocks: SourceBlock[], texts: string[]): string | null {
+  let from = 0;
+  let hit: string | null = null;
+  for (const t of texts) {
+    const want = normText(t);
+    if (!want) continue;
+    const i = blocks.findIndex((b, k) => k >= from && (normText(b.text).includes(want) || normText(b.label ?? "") === want));
+    if (i === -1) break;
+    hit = blocks[i]!.anchor;
+    from = i;
+  }
+  return hit;
 }
 
 function nearestText(blocks: SourceBlock[], from: number, dir: 1 | -1): SourceBlock | null {
@@ -320,7 +371,9 @@ const Block = memo(function Block({
   flash,
   pendingText,
   onAdd,
+  forarbeten,
 }: {
+  forarbeten?: { open: boolean; toggle: (anchor: string) => void; lawUri: string; lawTitle: string };
   block: SourceBlock;
   /** Markering som håller på att läggas till – visas kvar medan rutan är öppen. */
   pendingText?: string;
@@ -370,14 +423,30 @@ const Block = memo(function Block({
         </p>
       )}
       <p className="whitespace-pre-line text-[15px] leading-7">{renderText(block.text, searchHits, current, evRanges)}</p>
-      <button
-        onClick={(e) => onAdd(block, e.currentTarget)}
-        className="absolute -right-1 top-1 rounded-md border border-line bg-surface p-1 text-muted opacity-0 shadow-sm transition hover:text-accent focus:opacity-100 group-hover:opacity-100 print:hidden"
-        aria-label={`Lägg till ${block.label ?? "stycket"} i underlaget`}
-        title={`Lägg till ${block.label ?? "stycket"} i underlaget`}
-      >
-        <BookPlus className="size-3.5" />
-      </button>
+      <div className="absolute -right-1 top-1 flex gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100 print:hidden">
+        {forarbeten && (
+          <button
+            onClick={() => forarbeten.toggle(block.anchor)}
+            className={clsx("rounded-md border border-line bg-surface p-1 shadow-sm hover:text-accent", forarbeten.open ? "text-accent" : "text-muted")}
+            aria-label={`Förarbeten till ${block.label}`}
+            aria-expanded={forarbeten.open}
+            title={`Förarbeten och specialkommentar till ${block.label}`}
+          >
+            <ScrollText className="size-3.5" />
+          </button>
+        )}
+        <button
+          onClick={(e) => onAdd(block, e.currentTarget)}
+          className="rounded-md border border-line bg-surface p-1 text-muted shadow-sm hover:text-accent"
+          aria-label={`Lägg till ${block.label ?? "stycket"} i underlaget`}
+          title={`Lägg till ${block.label ?? "stycket"} i underlaget`}
+        >
+          <BookPlus className="size-3.5" />
+        </button>
+      </div>
+      {forarbeten?.open && (
+        <ForarbetenPanel lawUri={forarbeten.lawUri} anchor={block.anchor} lawTitle={forarbeten.lawTitle} label={block.label ?? ""} onClose={() => forarbeten.toggle(block.anchor)} />
+      )}
     </section>
   );
 });
@@ -498,6 +567,9 @@ export function buildRequest(source: LoadedSource, p: { first: SourceBlock; text
     return { documentId: source.ref.documentId, chunkId: p.first.chunkId ?? null, content: p.text, displayLabel: label, annotation: comment || null };
   }
   const date = new Date().toISOString().slice(0, 10);
-  const origin = `Källa: lagen.nu ${source.ref.uri}#${p.first.anchor} (${date}).`;
+  const origin =
+    source.ref.kind === "riksdagen"
+      ? `Källa: riksdagen.se https://data.riksdagen.se/dokument/${source.ref.dokId}#${p.first.anchor} (${date}).`
+      : `Källa: lagen.nu ${source.ref.uri}#${p.first.anchor} (${date}).`;
   return { documentId: null, chunkId: null, content: p.text, displayLabel: label, annotation: comment ? `${comment}\n\n${origin}` : origin };
 }

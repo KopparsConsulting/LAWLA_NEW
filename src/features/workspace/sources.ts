@@ -3,7 +3,7 @@
  * kopplar utredningens underlag till rätt block och textställe.
  */
 import { useQuery } from "@tanstack/react-query";
-import { documentsApi, lagenApi } from "@/api/client";
+import { documentsApi, lagenApi, riksdagenApi } from "@/api/client";
 import type { ExpandedEvidenceDto } from "@/api/types";
 import {
   buildToc,
@@ -11,6 +11,7 @@ import {
   fragmentOf,
   lagenUriIn,
   parseLagenMarkdown,
+  riksdagenRefIn,
   shortSourceName,
   sourceKey,
   stripFragment,
@@ -33,6 +34,8 @@ export interface LoadedSource {
   /** Länk till källan utanför Lawla (lagen.nu eller originalkälla). */
   externalUrl: string | null;
   truncated: boolean;
+  /** lagen.nu:s typ ("lag", "prop" …) – lagar får förarbeten per paragraf. */
+  lagenKind?: string | null;
 }
 
 const LAGEN_KIND: Record<string, string> = {
@@ -44,6 +47,8 @@ const LAGEN_KIND: Record<string, string> = {
   bet: "Betänkande",
   case: "Rättsfall",
 };
+
+const RIKSDAGEN_KIND: Record<string, string> = { prop: "Proposition", sou: "SOU", bet: "Betänkande", ds: "Ds" };
 
 export function useSource(ref: SourceRef | null) {
   return useQuery({
@@ -68,7 +73,7 @@ export function useSource(ref: SourceRef | null) {
           truncated: false,
         };
       }
-      const doc = await lagenApi.doc(r.uri);
+      const doc = r.kind === "riksdagen" ? await riksdagenApi.doc(r.dokId) : await lagenApi.doc(r.uri);
       const blocks = parseLagenMarkdown(doc.markdown, doc.uri);
       return {
         ref: r,
@@ -76,11 +81,12 @@ export function useSource(ref: SourceRef | null) {
         title: doc.title || doc.identifier || "Källa från lagen.nu",
         identifier: doc.identifier,
         short: shortSourceName(doc.title, doc.identifier),
-        typeLabel: (doc.kind && LAGEN_KIND[doc.kind]) || doc.kind,
+        typeLabel: (doc.kind && (r.kind === "riksdagen" ? RIKSDAGEN_KIND[doc.kind] : LAGEN_KIND[doc.kind])) || doc.kind,
         blocks,
         toc: buildToc(blocks),
-        externalUrl: doc.uri,
+        externalUrl: r.kind === "riksdagen" ? doc.sourceUrl : doc.uri,
         truncated: doc.truncated,
+        lagenKind: r.kind === "lagen" ? doc.kind : null,
       };
     },
   });
@@ -91,6 +97,8 @@ export function evidenceLocation(e: ExpandedEvidenceDto): { ref: SourceRef; anch
   if (e.documentId != null) return { ref: { kind: "doc", documentId: e.documentId }, anchor: e.chunkId != null ? `chunk-${e.chunkId}` : null };
   const uri = lagenUriIn(e.annotation);
   if (uri) return { ref: { kind: "lagen", uri: stripFragment(uri) }, anchor: fragmentOf(uri) };
+  const rd = riksdagenRefIn(e.annotation);
+  if (rd) return { ref: { kind: "riksdagen", dokId: rd.dokId }, anchor: rd.anchor };
   return null;
 }
 

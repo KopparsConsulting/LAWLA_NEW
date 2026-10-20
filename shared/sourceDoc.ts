@@ -8,18 +8,21 @@
 
 /* ─── Källor och flikar ───────────────────────────────────────────────── */
 
-export type SourceRef = { kind: "doc"; documentId: number } | { kind: "lagen"; uri: string };
+export type SourceRef = { kind: "doc"; documentId: number } | { kind: "lagen"; uri: string } | { kind: "riksdagen"; dokId: string };
 
 const LAGEN = "https://lagen.nu";
 
-/** Kort, URL-vänlig nyckel för en flik: "d12" (korpus) eller "l/2005:716" (lagen.nu, utan fragment). */
+/** Kort, URL-vänlig nyckel för en flik: "d12" (korpus), "l/2005:716" (lagen.nu, utan fragment), "r/GS03170" (riksdagen.se). */
 export function sourceKey(ref: SourceRef): string {
-  return ref.kind === "doc" ? `d${ref.documentId}` : `l${stripFragment(ref.uri).slice(LAGEN.length)}`;
+  if (ref.kind === "doc") return `d${ref.documentId}`;
+  if (ref.kind === "riksdagen") return `r/${ref.dokId}`;
+  return `l${stripFragment(ref.uri).slice(LAGEN.length)}`;
 }
 
 export function parseSourceKey(key: string): SourceRef | null {
   if (/^d\d+$/.test(key)) return { kind: "doc", documentId: Number(key.slice(1)) };
   if (/^l\/[^\s#?]+$/.test(key)) return { kind: "lagen", uri: LAGEN + key.slice(1) };
+  if (/^r\/[A-Z0-9]{4,20}$/.test(key)) return { kind: "riksdagen", dokId: key.slice(2) };
   return null;
 }
 
@@ -37,6 +40,12 @@ export function fragmentOf(uri: string): string | null {
 export function lagenUriIn(text: string | null | undefined): string | null {
   const m = text?.match(/https:\/\/lagen\.nu\/[^\s)"'<>]+/);
   return m ? m[0].replace(/[.,;]+$/, "") : null;
+}
+
+/** Källa från riksdagen.se i en kommentar ("Källa: riksdagen.se https://data.riksdagen.se/dokument/GS03170#t12"). */
+export function riksdagenRefIn(text: string | null | undefined): { dokId: string; anchor: string | null } | null {
+  const m = text?.match(/https:\/\/data\.riksdagen\.se\/dokument\/([A-Z0-9]{4,20})(?:#([^\s)"'<>]+))?/);
+  return m ? { dokId: m[1]!, anchor: m[2]?.replace(/[.,;]+$/, "") ?? null } : null;
 }
 
 /* ─── Block ───────────────────────────────────────────────────────────── */
@@ -141,6 +150,9 @@ export function parseLagenMarkdown(md: string, docUri: string): SourceBlock[] {
       blocks.push({ anchor: unique(frag ?? `h${i}`), kind: "heading", level, label: text, lagrum: false, text });
       return;
     }
+    // Kapitelrubrik i fetstil (författningskommentarer: "**5 kap. Uppehållstillstånd**").
+    const boldChapter = line.match(/^\*\*(\d{1,3}(?:\s?[a-z])?)\s*kap\.[^§]*\*\*\s*$/);
+    if (boldChapter) chapter = boldChapter[1]!.replace(/\s+/g, " ");
     const p = line.match(PARAGRAPH_START);
     if (p) {
       flush();
@@ -290,6 +302,8 @@ export function lagrumRange(from: string, to: string): string {
 export interface SourceMeta {
   title: string | null;
   identifier: string | null;
+  /** Falskt för förarbeten: paragrafer där är kommentarer till en lag, inte lagrum i källan. */
+  isLaw?: boolean;
 }
 
 /**
@@ -299,6 +313,9 @@ export interface SourceMeta {
 export function selectionLabel(first: SourceBlock, last: SourceBlock, meta: SourceMeta): string {
   const abbr = lawAbbreviation(meta.title);
   const docName = abbr ?? meta.identifier ?? meta.title ?? "Källa";
+  if (first.lagrum && last.lagrum && first.label && last.label && meta.isLaw === false) {
+    return `${meta.identifier ?? meta.title ?? "Förarbete"}, kommentaren till ${lagrumRange(first.label, last.label)}`;
+  }
   if (first.lagrum && last.lagrum && first.label && last.label) {
     // Korpusens etiketter kan redan innehålla lagens namn ("Äktenskapsbalk 12 kap. 3 §").
     const range = lagrumRange(first.label, last.label);

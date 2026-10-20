@@ -141,3 +141,17 @@ just den delen som rättskälla. Det skickas som vanligt till `POST /api/Project
 - **lagen.nu:** som §8, utan `documentId`; lagen.nu-adressen med ankare (`…/2005:716#K4P1`) står sist
   i `annotation`. Ett eget fält för extern källa och ankare vore bättre.
 - Önskemål: `charStart`/`charEnd` inom avsnittet, så att markeringen kan visas exakt.
+
+## 10. Förarbeten och anteckningar i arbetsytan (steg 2)
+
+- **Förarbeten per paragraf** (`/lagen/forarbeten`, `/lagen/kommentar` i Workern): ändringshistorik
+  ur lagen.nu:s metadata om ändringsförfattningar (`rpubl:andrar`, förarbeten per SFS), där
+  omnumreringar ("nuvarande 5 kap. 16 a § betecknas 5 kap. 16 b §") följs bakåt. Specialkommentaren
+  hämtas ur propositionens författningskommentar (lagen.nu:s markdown). Allt heuristiskt – en
+  backendtjänst som indexerar författningskommentarer per lagrum vore exaktare och snabbare.
+- **Riksdagen.se** (`/riksdagen/find`, `/riksdagen/doc`): betänkanden och dokument som saknas på
+  lagen.nu hämtas från data.riksdagen.se och görs om från PDF-konverterad HTML till text.
+  En specialkommentar som läggs i underlaget sparas som rättskälla utan `documentId`, med
+  propositionens lagen.nu-adress i `annotation` (se §8).
+- **Anteckningar per källa** lagras i D1 (`worker/notes.ts`, tabell `source_notes`), med samma
+  åtkomstkontroll som historiken. Önskemål: `GET/PUT /api/Projects/{id}/notes/{sourceKey}` i backend.
