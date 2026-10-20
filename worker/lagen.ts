@@ -6,6 +6,7 @@
  *   POST /lagen/verify {texts: [...]}    → { results: LagenResolution[] }
  *   GET  /lagen/text?uri=https://lagen.nu/1915:218#P36 → LagenText
  *   GET  /lagen/search?q=…&limit=5       → LagenSearchResult
+ *   GET  /lagen/doc?uri=https://lagen.nu/2005:716 → LagenDocument (hela dokumentet, för arbetsytan)
  *
  * Varför via Workern: svaren cachas i Cloudflare (samma hänvisning slås upp en gång per dygn
  * oavsett antal användare), bara inloggade användare kan använda proxyn, och lagen.nu får
@@ -14,10 +15,12 @@
 
 import {
   LAGEN_BASE,
+  LAGEN_DOC_MAX,
   LAGEN_QUERY_MAX,
   LAGEN_TEXT_MAX,
   LAGEN_VERIFY_MAX,
   isLagenUri,
+  type LagenDocument,
   type LagenResolution,
   type LagenSearchHit,
   type LagenSearchResult,
@@ -60,6 +63,8 @@ interface SearchResponse {
 }
 interface MarkdownDocument {
   uri: string;
+  source?: string | null;
+  kind?: string | null;
   label?: string | null;
   title?: string | null;
   pinpoint?: string | null;
@@ -202,6 +207,23 @@ export async function handleLagen(request: Request, url: URL): Promise<Response>
           pinLabel: clean(doc.pinpoint_label, 80),
           markdown,
           truncated,
+          sourceUrl: doc.source_url && /^https:\/\//.test(doc.source_url) ? doc.source_url : null,
+        };
+        return json(out, 200, PUBLIC_CACHE);
+      }
+      case "GET /lagen/doc": {
+        const raw = url.searchParams.get("uri") ?? "";
+        if (!isLagenUri(raw)) return json({ error: "Ogiltig lagen.nu-adress." }, 400);
+        const uri = raw.split("#")[0]!;
+        const doc = await lagenGet<MarkdownDocument>("/api/v1/document", { uri, format: "md" }, TTL_TEXT);
+        const md = doc.markdown ?? "";
+        const out: LagenDocument = {
+          uri,
+          title: clean(doc.title, 300),
+          identifier: clean(doc.label, 120),
+          kind: doc.kind ?? null,
+          source: doc.source ?? null,
+          ...trimMarkdown(md, LAGEN_DOC_MAX),
           sourceUrl: doc.source_url && /^https:\/\//.test(doc.source_url) ? doc.source_url : null,
         };
         return json(out, 200, PUBLIC_CACHE);

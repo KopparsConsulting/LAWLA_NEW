@@ -135,6 +135,17 @@ describe("/lagen-routes", () => {
     expect(data.truncated).toBe(false);
   });
 
+  it("doc hämtar hela dokumentet utan fragment", async () => {
+    const spy = mockLagen({
+      "https://lagen.nu/2005:716": { uri: "https://lagen.nu/2005:716", source: "sfs", kind: "lag", label: "SFS 2005:716", title: "Utlänningslag (2005:716)", inbound_count: 1, markdown: "# Utlänningslag\n\n**1 §** Text." },
+    });
+    const { request, url } = req(`/lagen/doc?uri=${encodeURIComponent("https://lagen.nu/2005:716#K4P1")}`);
+    const data = (await (await handleLagen(request, url)).json()) as { uri: string; kind: string; markdown: string; truncated: boolean };
+    expect(data).toMatchObject({ uri: "https://lagen.nu/2005:716", kind: "lag", truncated: false });
+    expect(data.markdown).toContain("**1 §**");
+    expect(new URL(String(spy.mock.calls[0]![0])).searchParams.get("uri")).toBe("https://lagen.nu/2005:716");
+  });
+
   it("search returnerar träffar med textställe", async () => {
     mockLagen({
       oskäligt: {

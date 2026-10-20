@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ChevronDown, MessageSquarePlus, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, Columns3, MessageSquarePlus, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
 import { projectsApi } from "@/api/client";
 import type { AddEvidenceRequest, ExpandedEvidenceDto, ProjectDetailDto, RagSourceDto } from "@/api/types";
 import { Badge, Button, Card, EmptyState, ErrorNote, Input, Label, Markdown, Spinner, Textarea } from "@/components/ui";
@@ -10,6 +10,9 @@ import { useRagStream } from "@/lib/useRagStream";
 import { buildSourcesPrompt } from "../suggest";
 import { useMainPrompt } from "../useSettings";
 import { LagenFinder } from "../lagen";
+import { ExpandableText } from "@/components/ExpandableText";
+import { evidenceLocation } from "@/features/workspace/sources";
+import { workspaceUrl } from "@/features/workspace/link";
 
 export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const qc = useQueryClient();
@@ -69,6 +72,7 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
             <EvidenceCard
               key={e.id}
               item={e}
+              projectId={project.id}
               onRemove={() => remove.mutate(e.id)}
               onSave={(changes) => replace.mutate({ old: e, changes })}
               saving={replace.isPending && replace.variables?.old.id === e.id}
@@ -287,16 +291,19 @@ function PassageRow({
 /** En rättskälla i underlaget – etikett och kommentar kan redigeras i efterhand. */
 function EvidenceCard({
   item: e,
+  projectId,
   onRemove,
   onSave,
   saving,
 }: {
   item: ExpandedEvidenceDto;
+  projectId: number;
   onRemove: () => void;
   onSave: (changes: { displayLabel: string | null; annotation: string | null }) => void;
   saving: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const loc = evidenceLocation(e);
   const [displayLabel, setDisplayLabel] = useState(e.displayLabel ?? "");
   const [annotation, setAnnotation] = useState(e.annotation ?? "");
 
@@ -350,7 +357,12 @@ function EvidenceCard({
                 )}
               </p>
               {e.documentTitle && e.displayLabel && <p className="text-xs text-muted">{e.documentTitle}</p>}
-              {e.content && <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-ink/90">{e.content}</p>}
+              {e.content && <ExpandableText text={e.content} lines={3} className="mt-2 text-sm leading-relaxed text-ink/90" />}
+              {loc && (
+                <Link to={workspaceUrl(projectId, { source: loc.ref, anchor: loc.anchor })} className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                  <Columns3 className="size-3" /> Öppna i arbetsytan
+                </Link>
+              )}
               {e.annotation ? (
                 <p className="mt-2 border-l-2 border-accent/40 pl-3 text-sm italic text-muted">{e.annotation}</p>
               ) : (

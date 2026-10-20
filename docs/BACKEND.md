@@ -129,3 +129,15 @@ bekräfta att en källa utan dokument accepteras och att `content` används i an
   `documentId`, avsnitt och referenser som övriga dokument.
 - Att analysprompten använder lagen.nu:s `POST /api/v1/citations/extract` för att få strukturerade
   hänvisningar (se §4) – då blir både spårbarheten och kontrollen exakt i stället för heuristisk.
+
+## 9. Arbetsytan (markerade textställen)
+
+I arbetsytan (`/utredning/:id/arbetsyta`) kan juristen markera text i en rättskälla och lägga till
+just den delen som rättskälla. Det skickas som vanligt till `POST /api/Projects/{id}/evidence`:
+
+- **Korpus:** `documentId` + `chunkId` för avsnittet där markeringen börjar, `content` = den markerade
+  texten (kan vara kortare än avsnittet), `displayLabel` med lagrummet först ("4 kap. 1 § UtlL").
+  Bekräfta att `content` får skilja sig från avsnittets text och att analyserna använder `content`.
+- **lagen.nu:** som §8, utan `documentId`; lagen.nu-adressen med ankare (`…/2005:716#K4P1`) står sist
+  i `annotation`. Ett eget fält för extern källa och ankare vore bättre.
+- Önskemål: `charStart`/`charEnd` inom avsnittet, så att markeringen kan visas exakt.

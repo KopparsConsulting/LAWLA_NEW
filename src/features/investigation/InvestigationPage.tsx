@@ -1,6 +1,6 @@
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, FileText, History, Share2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Columns3, FileText, History, Share2 } from "lucide-react";
 import clsx from "clsx";
 import { projectsApi } from "@/api/client";
 import type { ProjectDetailDto } from "@/api/types";
@@ -59,6 +59,9 @@ export default function InvestigationPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <h1 className="font-serif text-3xl leading-tight">{p.title || "Namnlös utredning"}</h1>
         <div className="flex gap-1">
+          <Link to={`/utredning/${id}/arbetsyta`} className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted hover:bg-sunken hover:text-ink">
+            <Columns3 className="size-4" /> Arbetsyta
+          </Link>
           <Link to={`/utredning/${id}/historik`} className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted hover:bg-sunken hover:text-ink">
             <History className="size-4" /> Historik
           </Link>

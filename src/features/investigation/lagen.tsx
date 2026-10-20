@@ -8,7 +8,8 @@
  */
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookPlus, Check, Search, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { BookPlus, Check, Columns3, Search, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Loader2 } from "lucide-react";
 import { lagenApi, projectsApi } from "@/api/client";
 import { Button, Card, Input, Label, Spinner, cx } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -19,6 +20,8 @@ import {
   type LagenResolution,
   type LagenStatus,
 } from "../../../shared/lagen";
+import { fragmentOf, stripFragment } from "../../../shared/sourceDoc";
+import { workspaceUrl } from "../workspace/link";
 
 const STALE = 60 * 60_000;
 const resolveKey = (q: string) => ["lagen-resolve", q] as const;
@@ -159,6 +162,37 @@ function FoundSource({ r, query, projectId }: { r: LagenResolution; query: strin
   const text = useQuery({ queryKey: ["lagen-text", r.uri], queryFn: () => lagenApi.text(r.uri!), enabled: !!r.uri, staleTime: STALE });
   const add = useAddFromLagen(projectId, query);
   const plain = text.data ? lagenPlainText(text.data.markdown) : null;
+  // En hel lag utan utpekad paragraf läggs inte till – lagens början säger inget som underlag.
+  // Den öppnas i stället i arbetsytan, där juristen väljer paragraf.
+  const wholeLaw = !r.pinLabel && r.source === "sfs";
+  const workspace = r.uri ? workspaceUrl(projectId, { source: { kind: "lagen", uri: stripFragment(r.uri) }, anchor: fragmentOf(r.uri) }) : null;
+
+  if (wholeLaw) {
+    return (
+      <div className="space-y-3 text-sm">
+        <div>
+          <p className="font-medium text-ink">{r.title}</p>
+          <p className="text-xs text-muted">{[r.kindLabel, r.identifier].filter(Boolean).join(" · ")}</p>
+        </div>
+        <p className="text-xs leading-5 text-muted">
+          Hänvisningen pekar på hela lagen, inte en paragraf. Öppna lagen i arbetsytan och markera de paragrafer som är relevanta – eller skriv hänvisningen med paragraf,
+          t.ex. <em>4 kap. 1 § {r.title?.split(" (")[0]?.toLowerCase()}</em>.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {workspace && (
+            <Link to={workspace} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-sm font-medium text-accent-ink hover:opacity-90">
+              <Columns3 className="size-3.5" /> Öppna i arbetsytan
+            </Link>
+          )}
+          {r.url && (
+            <a href={r.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+              Öppna på lagen.nu <ExternalLink className="size-3" />
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 text-sm">
@@ -186,6 +220,11 @@ function FoundSource({ r, query, projectId }: { r: LagenResolution; query: strin
           <Button size="sm" icon={<BookPlus className="size-3.5" />} loading={add.isPending} onClick={() => add.mutate({ uri: r.uri!, identifier: r.identifier, title: r.title })}>
             Lägg till i underlaget
           </Button>
+        )}
+        {workspace && (
+          <Link to={workspace} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+            <Columns3 className="size-3" /> Öppna i arbetsytan
+          </Link>
         )}
         {r.url && (
           <a href={r.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">

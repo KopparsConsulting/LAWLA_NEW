@@ -79,13 +79,17 @@ const LAW_ABBREVIATIONS: Record<string, string> = {
   lvu: "vård av unga",
   lvm: "vård av missbrukare",
   lpt: "psykiatrisk tvångsvård",
-  utll: "utlänningslag",
+
   hsl: "hälso- och sjukvårdslag",
   psl: "patientsäkerhetslag",
   gdpr: "dataskyddsförordning",
   ebl: "ekonomiska föreningar",
   brl: "bostadsrättslag",
   hyresl: "hyreslag",
+  utll: "utlänningslag",
+  sambol: "sambolag",
+  efl: "ekonomiska föreningar",
+  kkrl: "konsumentkreditlag",
 };
 
 export function normalizeKey(s: string): string {
@@ -166,6 +170,8 @@ function lagrumsFromLabel(label: string): { kap: string | null; par: string }[] 
 function lawWordFromTitle(title: string | null | undefined): string | null {
   if (!title) return null;
   const lower = title.toLowerCase();
+  // Förkortning som eget ord, t.ex. etiketten "4 kap. 1 § UtlL" från arbetsytan.
+  for (const token of lower.split(/[^a-zåäö]+/)) if (token.length >= 2 && LAW_ABBREVIATIONS[token]) return LAW_ABBREVIATIONS[token]!;
   for (const word of Object.values(LAW_ABBREVIATIONS)) if (lower.includes(word)) return word;
   const m = lower.match(/([a-zåäö-]+(?:lag|balk|förordning))(?:en)?\b/);
   return m ? m[1]! : null;

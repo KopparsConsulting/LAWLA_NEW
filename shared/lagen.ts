@@ -49,6 +49,19 @@ export interface LagenText {
   sourceUrl: string | null;
 }
 
+/** Hela dokumentet för arbetsytan (lagar kan vara över 500 000 tecken). */
+export interface LagenDocument {
+  uri: string;
+  title: string | null;
+  identifier: string | null;
+  /** lagen.nu:s typ: "lag", "prop", "sou", "case" … */
+  kind: string | null;
+  source: string | null;
+  markdown: string;
+  truncated: boolean;
+  sourceUrl: string | null;
+}
+
 export interface LagenSearchHit {
   uri: string;
   url: string;
@@ -71,6 +84,8 @@ export const LAGEN_VERIFY_MAX = 40;
 export const LAGEN_QUERY_MAX = 300;
 /** Längsta text som hämtas för ett textställe (tecken). Längre dokument kortas. */
 export const LAGEN_TEXT_MAX = 12_000;
+/** Längsta dokument som hämtas till arbetsytan (tecken). */
+export const LAGEN_DOC_MAX = 3_000_000;
 
 /** Bara riktiga lagen.nu-adresser accepteras som uri. */
 export function isLagenUri(uri: string): boolean {

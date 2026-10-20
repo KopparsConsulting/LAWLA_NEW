@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { BookOpen, FolderOpen, LogOut, Menu, MessageSquareText, Scale, X } from "lucide-react";
 import clsx from "clsx";
 import { useAuth, useFeatures } from "@/features/auth/auth";
@@ -9,6 +9,8 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const features = useFeatures();
   const [open, setOpen] = useState(false);
+  // Arbetsytan använder hela fönstret (egna paneler), övriga sidor en centrerad spalt.
+  const fullBleed = /^\/utredning\/\d+\/arbetsyta\/?$/.test(useLocation().pathname);
 
   const nav = [
     { to: "/", label: "Rättsutredningar", icon: FolderOpen, end: true },
@@ -72,7 +74,7 @@ export function AppLayout() {
           </button>
           <span className="font-semibold">Lawla</span>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-8 print:max-w-none print:p-0 sm:px-8">
+        <main className={clsx("w-full flex-1", fullBleed ? "min-h-0 min-w-0" : "mx-auto max-w-6xl px-4 pb-20 pt-8 print:max-w-none print:p-0 sm:px-8")}>
           <Outlet />
         </main>
       </div>

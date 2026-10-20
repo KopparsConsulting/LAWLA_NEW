@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Copy, Download, FileText, History, Play, Square } from "lucide-react";
+import { Columns3, Copy, Download, FileText, History, Play, Square } from "lucide-react";
 import { historyApi, projectsApi } from "@/api/client";
 import type { ProjectAnalysisDto, ProjectDetailDto } from "@/api/types";
 import { Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
@@ -126,7 +126,7 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
           <Card className="p-6 sm:p-8">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
               <p className="text-xs text-muted">Utkast · {formatDateTime(selected.createdAt)}</p>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -141,6 +141,12 @@ export function AnalysisStep({ project, aiEnabled }: { project: ProjectDetailDto
                 <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => exportMarkdown(selected)}>
                   Markdown
                 </Button>
+                <Link
+                  to={`/utredning/${project.id}/arbetsyta?analys=samlad`}
+                  className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium text-accent hover:bg-accent-soft"
+                >
+                  <Columns3 className="size-3.5" /> Arbeta med källorna
+                </Link>
                 <Link
                   to={`/utredning/${project.id}/rapport`}
                   className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted hover:bg-sunken hover:text-ink"

@@ -12,6 +12,7 @@ const InvestigationsPage = lazy(() => import("@/features/investigation/Investiga
 const InvestigationPage = lazy(() => import("@/features/investigation/InvestigationPage"));
 const HistoryPage = lazy(() => import("@/features/investigation/HistoryPage"));
 const ReportPage = lazy(() => import("@/features/investigation/ReportPage"));
+const WorkspacePage = lazy(() => import("@/features/workspace/WorkspacePage"));
 const GraphPage = lazy(() => import("@/features/investigation/GraphPage"));
 const DocumentsPage = lazy(() => import("@/features/documents/DocumentsPage"));
 const DocumentPage = lazy(() => import("@/features/documents/DocumentPage"));
@@ -52,6 +53,7 @@ export default function App() {
                   <Route path="utredning/:id/historik" element={<HistoryPage />} />
                   <Route path="utredning/:id/rapport" element={<ReportPage />} />
                   <Route path="utredning/:id/graf" element={<GraphPage />} />
+                  <Route path="utredning/:id/arbetsyta" element={<WorkspacePage />} />
                   <Route path="utredning/:id/:step" element={<InvestigationPage />} />
                   <Route path="dokument" element={<DocumentsPage />} />
                   <Route path="dokument/:id" element={<DocumentPage />} />

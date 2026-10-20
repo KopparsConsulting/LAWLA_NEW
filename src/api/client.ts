@@ -1,6 +1,6 @@
 import { createSseParser } from "./sse";
 import type { VersionDetail, VersionSummary, VersionTrigger } from "../../shared/snapshot";
-import type { LagenResolution, LagenSearchResult, LagenText } from "../../shared/lagen";
+import type { LagenDocument, LagenResolution, LagenSearchResult, LagenText } from "../../shared/lagen";
 import type { CreateShareRequest, ProjectSettings, SharedReport, ShareSummary } from "../../shared/sharing";
 import type {
   AddEvidenceRequest,
@@ -246,6 +246,7 @@ export const lagenApi = {
   resolve: (q: string) => get<LagenResolution>(`/lagen/resolve?q=${enc(q)}`),
   verify: (texts: string[]) => post<{ results: LagenResolution[] }>("/lagen/verify", { texts }),
   text: (uri: string) => get<LagenText>(`/lagen/text?uri=${enc(uri)}`),
+  doc: (uri: string) => get<LagenDocument>(`/lagen/doc?uri=${enc(uri)}`),
   search: (q: string, limit = 5) => get<LagenSearchResult>(`/lagen/search?q=${enc(q)}&limit=${limit}`),
 };
 

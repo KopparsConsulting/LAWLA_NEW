@@ -21,6 +21,7 @@ export function CitedMarkdown({
   projectId,
   summary = true,
   complement,
+  onOpenTarget,
 }: {
   markdown: string;
   evidence: ExpandedEvidenceDto[];
@@ -28,11 +29,15 @@ export function CitedMarkdown({
   summary?: boolean;
   /** Ger fält under varje punkt i analysens osäkerhetsavsnitt, för att komplettera med omständigheter. */
   complement?: ComplementOptions;
+  /** Tar över klick på hänvisningar (arbetsytan öppnar källan i en flik i stället för sidopanelen). */
+  onOpenTarget?: (t: CitationTarget) => void;
 }) {
   const { markdown: linked, report } = useMemo(() => linkifyCitations(markdown, evidence), [markdown, evidence]);
   const hasComplement = !!complement;
   const split = useMemo(() => (hasComplement ? splitUncertainties(linked) : null), [hasComplement, linked]);
-  const [target, setTarget] = useState<CitationTarget | null>(null);
+  const [ownTarget, setOwnTarget] = useState<CitationTarget | null>(null);
+  const setTarget = onOpenTarget ?? setOwnTarget;
+  const target = onOpenTarget ? null : ownTarget;
 
   return (
     <>
@@ -46,7 +51,7 @@ export function CitedMarkdown({
         <Markdown onCitation={setTarget}>{linked}</Markdown>
       )}
       {summary && <CitationSummary report={report} onOpen={setTarget} />}
-      {target && <SourcePanel target={target} evidence={evidence} projectId={projectId} onClose={() => setTarget(null)} />}
+      {target && <SourcePanel target={target} evidence={evidence} projectId={projectId} onClose={() => setOwnTarget(null)} />}
     </>
   );
 }

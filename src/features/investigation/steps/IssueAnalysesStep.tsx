@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FlaskConical, Share2 } from "lucide-react";
+import { ChevronDown, Columns3, FlaskConical, Share2 } from "lucide-react";
 import { historyApi, projectsApi } from "@/api/client";
 import type { ExpandedEvidenceDto, ProjectDetailDto, ProjectLegalIssueDto } from "@/api/types";
 import { Badge, Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
@@ -95,7 +95,7 @@ function IssueCard({
           <span className="mt-0.5 font-serif text-sm text-muted">{index}.</span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium leading-relaxed">{issue.text}</p>
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               <Badge tone={issue.analysisCount > 0 ? "ok" : "neutral"}>
                 {issue.analysisCount > 0 ? `${issue.analysisCount} analys${issue.analysisCount > 1 ? "er" : ""}` : "Ej analyserad"}
               </Badge>
@@ -103,6 +103,11 @@ function IssueCard({
                 <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-0.5 text-xs text-accent">
                   <ChevronDown className={`size-3.5 transition ${open ? "rotate-180" : ""}`} /> {open ? "Dölj" : "Visa"}
                 </button>
+              )}
+              {issue.analysisCount > 0 && (
+                <Link to={`/utredning/${projectId}/arbetsyta?analys=fraga-${issue.id}`} className="flex items-center gap-1 text-xs text-accent hover:underline">
+                  <Columns3 className="size-3" /> Arbeta med källorna
+                </Link>
               )}
               {issue.analysisCount > 0 && (
                 <Link to={`/utredning/${projectId}/graf?fokus=issue:${issue.id}`} className="flex items-center gap-1 text-xs text-accent hover:underline">
