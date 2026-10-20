@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, ChevronDown, MessageSquarePlus, Pencil, Plus, Search, Share2, Trash2 } from "lucide-react";
 import { projectsApi } from "@/api/client";
@@ -15,6 +15,8 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
   const toast = useToast();
   const evidenceKey = ["evidence", project.id];
   const evidence = useQuery({ queryKey: evidenceKey, queryFn: () => projectsApi.evidence(project.id) });
+  // ?sok=… kommer från relationsgrafen: en hänvisning som saknas i underlaget.
+  const prefill = useSearchParams()[0].get("sok")?.trim() || "";
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: evidenceKey });
@@ -77,6 +79,7 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
       {aiEnabled && (
         <SourceFinder
           project={project}
+          initialQuery={prefill}
           usedChunks={usedChunks}
           onAdd={(src, passageIndex, extra) => {
             const p = src.passages[passageIndex];
@@ -92,17 +95,19 @@ export function SourcesStep({ project, aiEnabled }: { project: ProjectDetailDto;
         />
       )}
 
-      <ManualSource onAdd={(body) => add.mutate(body)} busy={add.isPending} />
+      <ManualSource onAdd={(body) => add.mutate(body)} busy={add.isPending} initialLabel={prefill} />
     </div>
   );
 }
 
 function SourceFinder({
   project,
+  initialQuery = "",
   usedChunks,
   onAdd,
 }: {
   project: ProjectDetailDto;
+  initialQuery?: string;
   usedChunks: Set<number>;
   onAdd: (src: RagSourceDto, passageIndex: number, extra?: { displayLabel?: string; annotation?: string }) => void;
 }) {
@@ -110,7 +115,7 @@ function SourceFinder({
   const mainPrompt = useMainPrompt(project.id);
   const issues = project.legalIssues ?? [];
   const [focus, setFocus] = useState<string>("");
-  const [custom, setCustom] = useState("");
+  const [custom, setCustom] = useState(initialQuery);
   const [showAnswer, setShowAnswer] = useState(false);
 
   function search(e: FormEvent) {
@@ -368,9 +373,9 @@ function EvidenceCard({
   );
 }
 
-function ManualSource({ onAdd, busy }: { onAdd: (b: AddEvidenceRequest) => void; busy: boolean }) {
-  const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState("");
+function ManualSource({ onAdd, busy, initialLabel = "" }: { onAdd: (b: AddEvidenceRequest) => void; busy: boolean; initialLabel?: string }) {
+  const [open, setOpen] = useState(!!initialLabel);
+  const [label, setLabel] = useState(initialLabel);
   const [content, setContent] = useState("");
   const [annotation, setAnnotation] = useState("");
 

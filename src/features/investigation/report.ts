@@ -5,6 +5,7 @@
  */
 import type { ExpandedEvidenceDto, LegalIssueAnalysisDto, ProjectAnalysisDto, ProjectDetailDto } from "@/api/types";
 import { demoteHeadings } from "@/lib/mdblocks";
+import { assessGraph, buildGraph, buildMatrix, SOURCE_KIND_LABELS } from "./graph";
 
 export interface ReportInput {
   project: ProjectDetailDto;
@@ -32,6 +33,7 @@ export const REPORT_SECTIONS: ReportSection[] = [
   { key: "sources", title: "Rättskällor", included: true },
   { key: "issueAnalyses", title: "Analys per rättsfråga", included: true },
   { key: "analysis", title: "Samlad analys", included: true },
+  { key: "coverage", title: "Källtäckning och kontroll", included: true },
 ];
 
 function sorted<T extends { sortOrder: number; id: number }>(items: T[] | null | undefined): T[] {
@@ -102,7 +104,64 @@ export function buildReportMarkdown(input: ReportInput, include: Set<string> = n
     out.push(analysis?.outputContent?.trim() ? demoteHeadings(analysis.outputContent.trim(), 2) : "_Ingen samlad analys framtagen._");
   }
 
+  if (include.has("coverage")) {
+    out.push(section("Källtäckning och kontroll"));
+    out.push(buildCoverageMarkdown(input));
+  }
+
   out.push("---");
   out.push("_AI-genererat utkast från Lawla. Hänvisningar och slutsatser ska kontrolleras av ansvarig jurist innan dokumentet används i rådgivning._");
   return out.join("\n\n") + "\n";
+}
+
+const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+
+/**
+ * Avsnittet "Källtäckning och kontroll": vilka rättskällor varje analys hänvisar till (tabell),
+ * hänvisningar som saknas i underlaget, oanvända källor och anmärkningar per rättsfråga.
+ */
+export function buildCoverageMarkdown(input: Pick<ReportInput, "project" | "evidence" | "issueAnalyses" | "analysis">): string {
+  const graph = buildGraph({ project: input.project, evidence: input.evidence, issueAnalyses: input.issueAnalyses, analysis: input.analysis });
+  const { columns, rows, missing, unused } = buildMatrix(graph);
+  const warnings = assessGraph(graph, input);
+  if (columns.length === 0) return "_Inga rättsfrågor att redovisa._";
+
+  const out: string[] = [];
+  out.push(
+    `Tabellen visar hur många gånger varje delanalys${columns.some((c) => c.kind === "analysis") ? " och den samlade analysen" : ""} hänvisar till respektive rättskälla. ` +
+      "Hänvisningarna har matchats automatiskt mot underlaget och ska kontrolleras.",
+  );
+  out.push(columns.map((c) => `- **${c.short}** ${cell(c.kind === "analysis" ? "Samlad analys" : c.label)}`).join("\n"));
+
+  if (rows.length === 0 && missing.length === 0) out.push("_Ingen analys hänvisar till underlaget ännu._");
+  else {
+    const header = `| Rättskälla | Typ | ${columns.map((c) => c.short).join(" | ")} |`;
+    const sep = `| --- | --- | ${columns.map(() => ":---:").join(" | ")} |`;
+    const line = (label: string, type: string, cells: number[]) => `| ${cell(label)} | ${type} | ${cells.map((n) => (n > 0 ? String(n) : "–")).join(" | ")} |`;
+    out.push(
+      [
+        header,
+        sep,
+        ...rows.map((r) => line(r.node.label, SOURCE_KIND_LABELS[r.node.sourceKind ?? "ovrigt"], r.cells)),
+        ...missing.map((r) => line(`${r.node.label} (saknas i underlaget)`, "–", r.cells)),
+      ].join("\n"),
+    );
+  }
+
+  if (missing.length > 0)
+    out.push(
+      `**Hänvisningar som saknas i underlaget:** ${missing
+        .map((r) => `${r.node.label} (${columns.filter((_, i) => (r.cells[i] ?? 0) > 0).map((c) => c.short).join(", ")})`)
+        .join("; ")}. Kontrollera dem innan utredningen används.`,
+    );
+  if (unused.length > 0) out.push(`**Rättskällor som inte används av någon analys:** ${unused.map((n) => n.label).join("; ")}.`);
+
+  const notes = columns
+    .map((c) => ({ c, list: (warnings.get(c.id) ?? []).filter((w) => w.code !== "missing") }))
+    .filter((x) => x.list.length > 0);
+  if (notes.length > 0) {
+    out.push("**Anmärkningar:**");
+    out.push(notes.map(({ c, list }) => `- **${c.short}:** ${list.map((w) => w.text).join(" ")}`).join("\n"));
+  } else out.push("_Inga anmärkningar utöver ovanstående._");
+  return out.join("\n\n");
 }

@@ -83,7 +83,25 @@ Två funktioner från ursprungsofferten som frontenden byggt ovanpå Workern i v
   `GET/DELETE /api/Projects/{id}/shares/{token}` och en publik `GET /api/shares/{token}` som
   returnerar det frysta innehållet. Formatet finns i `shared/sharing.ts`.
 
-## 6. Mindre saker
+## 6. Relationsgraf och källtäckning (önskemål)
+
+Relationsgrafen (`/utredning/:id/graf`) och avsnittet "Källtäckning och kontroll" i rapporten byggs
+helt i klienten. Det fungerar, men blir exaktare och snabbare med:
+
+- **`documentType` i `GET /api/Projects/{id}/evidence/expanded`.** I dag hämtas `GET /api/Documents/{id}`
+  för varje källdokument bara för att få typen (lagrum/praxis/förarbeten/doktrin), utöver
+  `…/outgoing`. Två anrop per dokument blir märkbart med stort underlag.
+- **Utgående referenser för flera dokument i ett anrop**, t.ex.
+  `GET /api/References/outgoing?documentIds=1,2,3`.
+- **Källa på dokumentnivå.** "Lägg till i underlaget" i grafen skickar
+  `POST /api/Projects/{id}/evidence` med bara `documentId` och `displayLabel` (inget `chunkId`
+  eller `content`), för föreslagna källor och saknade hänvisningar som finns i korpusen. Bekräfta
+  att det accepteras; annars behövs ett sätt att välja ett representativt stycke.
+- **`updatedAt` på rättskällor och rättsfrågor**, eller borttagna poster i historiken. Varningen
+  "underlaget har ändrats efter analysen" ser i dag bara tillagda källor, inte ändrade eller borttagna.
+- Med strukturerade citations (§4) blir även matrisen och kvalitetskontrollen exakta.
+
+## 7. Mindre saker
 
 - `RagQueryRequest` saknar `projectId`. Frontenden skickar i dag med ärendets kontext i
   själva frågan. Ett `projectId`-fält skulle ge bättre och billigare svar.

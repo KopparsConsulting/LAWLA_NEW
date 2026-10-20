@@ -15,6 +15,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
+  --color-warn: var(--warn);
   --color-ok: var(--ok);
 }
 
@@ -29,6 +30,7 @@
   --accent-ink: #ffffff;
   --accent-soft: #e6ecf5;
   --danger: #a23b2a;
+  --warn: #94620a;
   --ok: #2f6b45;
   /* Relationsgrafens källtyper */
   --g-lagrum: #1f3b63;
@@ -51,6 +53,7 @@
     --accent-ink: #10151f;
     --accent-soft: #212b3b;
     --danger: #e08a78;
+    --warn: #e0b45c;
     --ok: #86c39b;
     --g-lagrum: #8fb0e0;
     --g-praxis: #e0b273;

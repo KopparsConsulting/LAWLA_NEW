@@ -7,27 +7,34 @@
  *  - samlad analys → rättskälla: den samlade analysen hänvisar till källan
  *  - rättskälla → rättskälla: källornas dokument hänvisar till varandra (backendens referenser)
  *  - rättsfråga/analys → saknad hänvisning: hänvisning som inte finns i underlaget
+ *  - rättskälla → föreslagen källa: källans dokument hänvisar till ett dokument som inte finns i underlaget
  *
- * Layouten är en enkel, deterministisk kraftlayout (ingen extern grafbibliotek).
+ * Här finns också kvalitetskontrollen per rättsfråga (`assessGraph`) och täckningsmatrisen
+ * (`buildMatrix`), som både vyn och rapporten använder.
+ *
+ * Layouten är en deterministisk lagerlayout i tre kolumner (inget grafbibliotek).
  */
 import type { DocumentReferenceDto, ExpandedEvidenceDto, LegalIssueAnalysisDto, ProjectAnalysisDto, ProjectDetailDto } from "@/api/types";
 import { linkifyCitations, normalizeKey } from "./citations";
 
 export type SourceKind = "lagrum" | "praxis" | "forarbeten" | "doktrin" | "ovrigt";
-export type NodeKind = "issue" | "analysis" | "source" | "missing";
+export type NodeKind = "issue" | "analysis" | "source" | "missing" | "suggested";
 
 export interface GraphNode {
   id: string;
   kind: NodeKind;
   label: string;
+  /** Kort beteckning: "F1", "F2" … för rättsfrågor, "Samlad" för den samlade analysen. */
+  short?: string;
   /** Underrubrik, t.ex. dokumenttitel. */
   sub?: string;
   /** Typ av rättskälla (bara för kind = "source"). */
   sourceKind?: SourceKind;
   /** Rättsfrågans id / rättskällans id / analysens id. */
   refId?: number;
+  /** Dokumentet bakom noden. För saknade hänvisningar: ett dokument i korpusen som verkar motsvara hänvisningen. */
   documentId?: number | null;
-  /** Antal hänvisningar som pekar på noden. */
+  /** Antal hänvisningar som pekar på noden (för föreslagna källor: antal källdokument som hänvisar dit). */
   weight: number;
 }
 
@@ -42,6 +49,8 @@ export interface GraphEdge {
   weight: number;
   /** Kort beskrivning för tooltip. */
   title?: string;
+  /** Meningarna i analysen där hänvisningen står (unika, i textordning). Bara för cites. */
+  contexts: string[];
 }
 
 export interface Graph {
@@ -62,7 +71,11 @@ export const NODE_KIND_LABELS: Record<NodeKind, string> = {
   analysis: "Samlad analys",
   source: "Rättskälla",
   missing: "Saknas i underlaget",
+  suggested: "Föreslagen källa",
 };
+
+/** Hur många föreslagna källor som högst visas (de som flest källor hänvisar till). */
+export const MAX_SUGGESTED = 12;
 
 const PRAXIS_RE = /\b(NJA|RH|HFD|RÅ|AD|MÖD|MD)\s+\d{4}|\bC-\d+\/\d+/;
 const FORARBETEN_RE = /\b(prop\.?|SOU|Ds|bet\.?)\s+\d{4}/i;
@@ -89,6 +102,8 @@ export function classifySource(e: Pick<ExpandedEvidenceDto, "displayLabel" | "do
 export const issueNodeId = (id: number) => `issue:${id}`;
 export const sourceNodeId = (id: number) => `source:${id}`;
 export const missingNodeId = (text: string) => `missing:${normalizeKey(text)}`;
+export const suggestedNodeId = (documentId: number) => `suggested:${documentId}`;
+export const citeEdgeId = (from: string, to: string) => `cites:${from}>${to}`;
 export const ANALYSIS_NODE_ID = "analysis";
 
 export interface GraphInput {
@@ -109,15 +124,23 @@ function trimLabel(s: string, max = 60): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
+export function sortedIssues(project: ProjectDetailDto) {
+  return [...(project.legalIssues ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+}
+
 export function buildGraph(input: GraphInput): Graph {
   const nodes = new Map<string, GraphNode>();
   const edges = new Map<string, GraphEdge>();
 
-  const addEdge = (from: string, to: string, kind: EdgeKind, title?: string) => {
-    const id = `${kind}:${from}>${to}`;
-    const existing = edges.get(id);
-    if (existing) existing.weight += 1;
-    else edges.set(id, { id, from, to, kind, weight: 1, title });
+  const addEdge = (from: string, to: string, kind: EdgeKind, title?: string, context?: string) => {
+    const id = kind === "cites" ? citeEdgeId(from, to) : `${kind}:${from}>${to}`;
+    let edge = edges.get(id);
+    if (edge) edge.weight += 1;
+    else {
+      edge = { id, from, to, kind, weight: 1, title, contexts: [] };
+      edges.set(id, edge);
+    }
+    if (context && !edge.contexts.includes(context)) edge.contexts.push(context);
   };
   const bump = (id: string) => {
     const n = nodes.get(id);
@@ -130,7 +153,7 @@ export function buildGraph(input: GraphInput): Graph {
     nodes.set(sourceNodeId(e.id), {
       id: sourceNodeId(e.id),
       kind: "source",
-      label: trimLabel(e.displayLabel || e.documentTitle || `Källa ${e.id}`),
+      label: trimLabel(e.displayLabel || e.documentTitle || `Källa ${e.id}`, 160),
       sub: e.documentTitle && e.displayLabel ? trimLabel(e.documentTitle, 80) : undefined,
       sourceKind: classifySource({ ...e, documentType }),
       refId: e.id,
@@ -140,10 +163,9 @@ export function buildGraph(input: GraphInput): Graph {
   }
 
   // Rättsfrågor + delanalysernas hänvisningar
-  const issues = [...(input.project.legalIssues ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-  issues.forEach((issue, i) => {
+  sortedIssues(input.project).forEach((issue, i) => {
     const id = issueNodeId(issue.id);
-    nodes.set(id, { id, kind: "issue", label: trimLabel(issue.text || `Rättsfråga ${i + 1}`, 70), refId: issue.id, weight: 0 });
+    nodes.set(id, { id, kind: "issue", label: trimLabel(issue.text || `Rättsfråga ${i + 1}`, 400), short: `F${i + 1}`, refId: issue.id, weight: 0 });
     const analysis = input.issueAnalyses.get(issue.id);
     if (!analysis?.outputContent) return;
     linkCitations(id, `Rättsfråga ${i + 1}`, analysis.outputContent);
@@ -151,7 +173,7 @@ export function buildGraph(input: GraphInput): Graph {
 
   // Samlad analys
   if (input.analysis?.outputContent) {
-    nodes.set(ANALYSIS_NODE_ID, { id: ANALYSIS_NODE_ID, kind: "analysis", label: "Samlad analys", refId: input.analysis.id, weight: 0 });
+    nodes.set(ANALYSIS_NODE_ID, { id: ANALYSIS_NODE_ID, kind: "analysis", label: "Samlad analys", short: "Samlad", refId: input.analysis.id, weight: 0 });
     linkCitations(ANALYSIS_NODE_ID, "Samlad analys", input.analysis.outputContent);
   }
 
@@ -161,18 +183,18 @@ export function buildGraph(input: GraphInput): Graph {
       if (c.evidenceId != null) {
         const to = sourceNodeId(c.evidenceId);
         if (!nodes.has(to)) continue;
-        addEdge(fromId, to, "cites", `${fromLabel} hänvisar till ${c.text}`);
+        addEdge(fromId, to, "cites", `${fromLabel} hänvisar till ${c.text}`, c.context);
         bump(to);
       } else {
         const to = missingNodeId(c.text);
         if (!nodes.has(to)) nodes.set(to, { id: to, kind: "missing", label: trimLabel(c.text), weight: 0 });
-        addEdge(fromId, to, "cites", `${fromLabel} hänvisar till ${c.text}, som saknas i underlaget`);
+        addEdge(fromId, to, "cites", `${fromLabel} hänvisar till ${c.text}, som saknas i underlaget`, c.context);
         bump(to);
       }
     }
   }
 
-  // Dokumentreferenser mellan rättskällornas dokument
+  // Dokumentreferenser från rättskällornas dokument
   if (input.references) {
     const byDoc = new Map<number, string[]>();
     for (const e of input.evidence) {
@@ -181,22 +203,213 @@ export function buildGraph(input: GraphInput): Graph {
       list.push(sourceNodeId(e.id));
       byDoc.set(e.documentId, list);
     }
-    for (const [docId, refs] of input.references) {
+    // Saknade hänvisningar, för att känna igen när ett källdokument hänvisar till samma sak.
+    const missingByKey = new Map<string, GraphNode>();
+    for (const n of nodes.values()) if (n.kind === "missing") missingByKey.set(normalizeKey(n.label), n);
+    const matchMissing = (r: DocumentReferenceDto): GraphNode | undefined => {
+      for (const t of [r.canonicalForm, r.citationText, r.displayText]) {
+        const hit = t ? missingByKey.get(normalizeKey(t)) : undefined;
+        if (hit) return hit;
+      }
+      return undefined;
+    };
+
+    const suggested = new Map<number, { title: string; from: Set<string>; via: string[] }>();
+    for (const [docId, refs] of [...input.references].sort((a, b) => a[0] - b[0])) {
       const fromNodes = byDoc.get(docId);
       if (!fromNodes) continue;
+      const from = fromNodes[0]!;
       const seenTargets = new Set<number>();
       for (const r of refs) {
         if (!r.isResolved || r.targetDocumentId == null || r.targetDocumentId === docId) continue;
-        const toNodes = byDoc.get(r.targetDocumentId);
-        if (!toNodes || seenTargets.has(r.targetDocumentId)) continue;
-        seenTargets.add(r.targetDocumentId);
-        // Koppla ett representativt par per dokumentpar så grafen inte drunknar i kanter.
-        addEdge(fromNodes[0]!, toNodes[0]!, "refers", `${r.displayText || r.citationText || "Hänvisning"} → ${r.targetDocumentTitle ?? ""}`.trim());
+        const target = r.targetDocumentId;
+        if (seenTargets.has(target)) continue;
+        seenTargets.add(target);
+        const text = r.displayText || r.citationText || r.canonicalForm || "Hänvisning";
+        const toNodes = byDoc.get(target);
+        if (toNodes) {
+          // Koppla ett representativt par per dokumentpar så grafen inte drunknar i kanter.
+          addEdge(from, toNodes[0]!, "refers", `${text} → ${r.targetDocumentTitle ?? ""}`.trim());
+          continue;
+        }
+        const missing = matchMissing(r);
+        if (missing) {
+          // Analysen hänvisar till något som saknas – men det finns i korpusen och källorna hänvisar dit.
+          missing.documentId ??= target;
+          missing.sub ??= r.targetDocumentTitle ? trimLabel(r.targetDocumentTitle, 80) : undefined;
+          addEdge(from, missing.id, "refers", `${text} → ${r.targetDocumentTitle ?? ""}`.trim());
+          continue;
+        }
+        const s = suggested.get(target) ?? { title: r.targetDocumentTitle || text, from: new Set<string>(), via: [] };
+        s.from.add(from);
+        if (!s.via.includes(text)) s.via.push(text);
+        suggested.set(target, s);
       }
+    }
+    const top = [...suggested.entries()]
+      .sort((a, b) => b[1].from.size - a[1].from.size || a[1].title.localeCompare(b[1].title, "sv") || a[0] - b[0])
+      .slice(0, MAX_SUGGESTED);
+    for (const [docId, s] of top) {
+      const id = suggestedNodeId(docId);
+      nodes.set(id, { id, kind: "suggested", label: trimLabel(s.title, 160), sub: s.via.slice(0, 3).join(", "), documentId: docId, weight: s.from.size });
+      for (const from of s.from) addEdge(from, id, "refers", `Hänvisar till ${s.title}, som inte finns i underlaget`);
     }
   }
 
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+/* ─── Kvalitetskontroll ─────────────────────────────────────────────── */
+
+export type WarningLevel = "danger" | "warn" | "info";
+
+export interface Warning {
+  level: WarningLevel;
+  code: "no-analysis" | "no-citations" | "missing" | "single-source" | "weak-sources" | "no-lagrum" | "no-praxis" | "stale";
+  text: string;
+}
+
+const LEVEL_RANK: Record<WarningLevel, number> = { danger: 0, warn: 1, info: 2 };
+
+export function worstLevel(warnings: Warning[] | undefined): WarningLevel | null {
+  if (!warnings?.length) return null;
+  return [...warnings].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level])[0]!.level;
+}
+
+const time = (s: string | null | undefined) => {
+  const t = s ? Date.parse(s) : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Bedömer hur väl varje rättsfråga (och den samlade analysen) är förankrad i underlaget.
+ * Nyckel: nodens id. Varningarna är sorterade med de allvarligaste först.
+ */
+export function assessGraph(graph: Graph, input: Pick<GraphInput, "project" | "issueAnalyses" | "analysis">): Map<string, Warning[]> {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const evidenceTimes = (input.project.evidence ?? []).map((e) => time(e.createdAt)).filter((t): t is number => t != null);
+  const out = new Map<string, Warning[]>();
+
+  const assessCitations = (nodeId: string, warnings: Warning[]) => {
+    const targets = graph.edges.filter((e) => e.kind === "cites" && e.from === nodeId).map((e) => byId.get(e.to)).filter((n): n is GraphNode => !!n);
+    const sources = targets.filter((n) => n.kind === "source");
+    const missing = targets.filter((n) => n.kind === "missing");
+    if (missing.length > 0)
+      warnings.push({
+        level: "danger",
+        code: "missing",
+        text: `${plural(missing.length, "hänvisning", "hänvisningar")} saknas i underlaget: ${missing.map((m) => m.label).join(", ")}.`,
+      });
+    if (sources.length === 0) {
+      if (missing.length === 0) warnings.push({ level: "warn", code: "no-citations", text: "Analysen hänvisar inte till något i underlaget." });
+      return;
+    }
+    if (sources.length === 1) warnings.push({ level: "warn", code: "single-source", text: "Vilar på en enda rättskälla." });
+    const kinds = new Set(sources.map((s) => s.sourceKind ?? "ovrigt"));
+    if ([...kinds].every((k) => k === "doktrin" || k === "ovrigt"))
+      warnings.push({ level: "warn", code: "weak-sources", text: "Stöds bara av doktrin eller övriga källor – inget lagrum, ingen praxis och inga förarbeten." });
+    else if (!kinds.has("lagrum")) warnings.push({ level: "warn", code: "no-lagrum", text: "Inget lagrum i underlaget stöder analysen." });
+    if (!kinds.has("praxis") && !warnings.some((w) => w.code === "weak-sources"))
+      warnings.push({ level: "info", code: "no-praxis", text: "Ingen praxis i underlaget för frågan." });
+  };
+
+  const staleness = (createdAt: string, extra: number[] = []): Warning | null => {
+    const at = time(createdAt);
+    if (at == null) return null;
+    const newer = evidenceTimes.filter((t) => t > at).length;
+    const newerAnalyses = extra.filter((t) => t > at).length;
+    if (newer === 0 && newerAnalyses === 0) return null;
+    const parts = [
+      newer > 0 ? `${plural(newer, "rättskälla", "rättskällor")} har lagts till` : null,
+      newerAnalyses > 0 ? `${plural(newerAnalyses, "delanalys", "delanalyser")} har körts om` : null,
+    ].filter(Boolean);
+    return { level: "warn", code: "stale", text: `${parts.join(" och ")} sedan analysen gjordes – kör om den.` };
+  };
+
+  for (const issue of sortedIssues(input.project)) {
+    const id = issueNodeId(issue.id);
+    if (!byId.has(id)) continue;
+    const warnings: Warning[] = [];
+    const analysis = input.issueAnalyses.get(issue.id);
+    if (!analysis?.outputContent) warnings.push({ level: "info", code: "no-analysis", text: "Ingen delanalys har körts." });
+    else {
+      assessCitations(id, warnings);
+      const stale = staleness(analysis.createdAt);
+      if (stale) warnings.push(stale);
+    }
+    out.set(id, warnings.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]));
+  }
+
+  if (input.analysis?.outputContent && byId.has(ANALYSIS_NODE_ID)) {
+    const warnings: Warning[] = [];
+    assessCitations(ANALYSIS_NODE_ID, warnings);
+    const issueTimes = [...input.issueAnalyses.values()].map((a) => time(a.createdAt)).filter((t): t is number => t != null);
+    const stale = staleness(input.analysis.createdAt, issueTimes);
+    if (stale) warnings.push(stale);
+    out.set(ANALYSIS_NODE_ID, warnings.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]));
+  }
+  return out;
+}
+
+/* ─── Täckningsmatris ───────────────────────────────────────────────── */
+
+export interface MatrixRow {
+  node: GraphNode;
+  /** Antal hänvisningar per kolumn (samma ordning som `columns`). */
+  cells: number[];
+  total: number;
+}
+
+export interface Matrix {
+  /** Rättsfrågorna i ordning, sist den samlade analysen om den finns. */
+  columns: GraphNode[];
+  /** Rättskällor som minst en analys hänvisar till, ordnade efter typ och antal hänvisningar. */
+  rows: MatrixRow[];
+  /** Hänvisningar som saknas i underlaget. */
+  missing: MatrixRow[];
+  /** Rättskällor som ingen analys hänvisar till. */
+  unused: GraphNode[];
+}
+
+const SOURCE_KIND_ORDER: SourceKind[] = ["lagrum", "forarbeten", "praxis", "doktrin", "ovrigt"];
+
+export function buildMatrix(graph: Graph): Matrix {
+  const columns = [...graph.nodes.filter((n) => n.kind === "issue"), ...graph.nodes.filter((n) => n.kind === "analysis")];
+  const counts = new Map<string, number>();
+  for (const e of graph.edges) if (e.kind === "cites") counts.set(`${e.from}>${e.to}`, e.weight);
+  const row = (node: GraphNode): MatrixRow => {
+    const cells = columns.map((c) => counts.get(`${c.id}>${node.id}`) ?? 0);
+    return { node, cells, total: cells.reduce((s, n) => s + n, 0) };
+  };
+  const kindRank = (n: GraphNode) => SOURCE_KIND_ORDER.indexOf(n.sourceKind ?? "ovrigt");
+  const byTotal = (a: MatrixRow, b: MatrixRow) => b.total - a.total || a.node.label.localeCompare(b.node.label, "sv");
+  const sources = graph.nodes.filter((n) => n.kind === "source").map(row);
+  return {
+    columns,
+    rows: sources.filter((r) => r.total > 0).sort((a, b) => kindRank(a.node) - kindRank(b.node) || byTotal(a, b)),
+    missing: graph.nodes.filter((n) => n.kind === "missing").map(row).sort(byTotal),
+    unused: sources.filter((r) => r.total === 0).map((r) => r.node).sort((a, b) => kindRank(a) - kindRank(b) || a.label.localeCompare(b.label, "sv")),
+  };
+}
+
+/* ─── Fokus och filter ──────────────────────────────────────────────── */
+
+/**
+ * Delgraf kring en nod: noden, dess grannar och – för rättsfrågor och analysen – korsreferenser
+ * och föreslagna källor från de källor den bygger på.
+ */
+export function focusGraph(graph: Graph, id: string): Graph {
+  const keep = neighbours(graph, id);
+  const center = graph.nodes.find((n) => n.id === id);
+  if (center && (center.kind === "issue" || center.kind === "analysis")) {
+    const sources = new Set([...keep].filter((k) => k.startsWith("source:")));
+    for (const e of graph.edges) if (e.kind === "refers" && sources.has(e.from)) keep.add(e.to);
+  }
+  const nodes = graph.nodes.filter((n) => keep.has(n.id));
+  const edges = graph.edges.filter((e) => keep.has(e.from) && keep.has(e.to) && (e.kind === "refers" || e.from === id || e.to === id));
+  return { nodes, edges };
 }
 
 /* ─── Layout ────────────────────────────────────────────────────────── */
@@ -205,6 +418,8 @@ export interface Positioned extends GraphNode {
   x: number;
   y: number;
   r: number;
+  /** Hur många tecken etiketten får ta innan den kortas. */
+  labelChars: number;
 }
 
 export interface LayoutOptions {
@@ -215,14 +430,16 @@ export interface LayoutOptions {
 export function nodeRadius(n: GraphNode): number {
   if (n.kind === "issue") return 18;
   if (n.kind === "analysis") return 22;
-  if (n.kind === "missing") return 9;
+  if (n.kind === "missing" || n.kind === "suggested") return 9;
   return 10 + Math.min(10, n.weight * 2);
 }
 
 /** Minsta lodräta avstånd mellan nodcentrum i en kolumn (ger plats för etiketter). */
 export const ROW_GAP = 46;
+/** Ungefärlig bredd per tecken i etiketterna (12 px Inter). */
+const CHAR_W = 6.4;
 
-/** Kolumn per nodtyp: frågor/analys till vänster, källor i mitten, saknade hänvisningar till höger. */
+/** Kolumn per nodtyp: frågor/analys till vänster, källor i mitten, det som ligger utanför underlaget till höger. */
 function column(n: GraphNode): 0 | 1 | 2 {
   if (n.kind === "issue" || n.kind === "analysis") return 0;
   if (n.kind === "source") return 1;
@@ -236,44 +453,44 @@ export function layoutRows(graph: Graph): number {
   return Math.max(1, ...counts);
 }
 
-const SOURCE_KIND_ORDER: SourceKind[] = ["lagrum", "forarbeten", "praxis", "doktrin", "ovrigt"];
+/** Höjd som ryms utan att noderna överlappar. */
+export function layoutHeight(graph: Graph): number {
+  return Math.max(420, 80 + layoutRows(graph) * ROW_GAP);
+}
 
 /**
  * Lagerlayout i tre kolumner. Noderna i kolumn 1 och 2 sorteras efter tyngdpunkten hos de
- * frågor som hänvisar till dem (barycenter), så att kanterna korsar varandra så lite som möjligt.
- * Deterministisk: samma graf och yta ger alltid samma bild.
+ * noder som hänvisar till dem (barycenter), så att kanterna korsar varandra så lite som möjligt.
+ * Deterministisk: samma graf och yta ger alltid samma bild. Höjden bör vara minst `layoutHeight`.
  */
 export function layoutGraph(graph: Graph, opts: LayoutOptions): Positioned[] {
-  const { width, height } = opts;
-  const nodes: Positioned[] = graph.nodes.map((n) => ({ ...n, x: 0, y: 0, r: nodeRadius(n) }));
+  const { width } = opts;
+  const height = Math.max(opts.height, layoutHeight(graph));
+  const nodes: Positioned[] = graph.nodes.map((n) => ({ ...n, x: 0, y: 0, r: nodeRadius(n), labelChars: 34 }));
   if (nodes.length === 0) return nodes;
   if (nodes.length === 1) {
     nodes[0]!.x = width / 2;
-    nodes[0]!.y = height / 2;
+    nodes[0]!.y = opts.height / 2;
+    nodes[0]!.labelChars = Math.max(8, Math.floor((width / 2 - 40) / CHAR_W));
     return nodes;
   }
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const columnX = [Math.min(260, width * 0.27), width * 0.52, width - Math.min(150, width * 0.16)];
+  const hasLeft = nodes.some((n) => column(n) === 0);
+  const hasRight = nodes.some((n) => column(n) === 2);
+  // Kolumnernas x: utan högerkolumn får källornas etiketter resten av bredden.
+  const leftX = hasLeft ? Math.min(300, Math.max(96, width * 0.34)) : 0;
+  const rightX = width - Math.min(150, Math.max(70, width * 0.2));
+  const midX = hasLeft ? (hasRight ? leftX + (rightX - leftX) * 0.28 : Math.max(leftX + 70, width * 0.45)) : hasRight ? width * 0.15 : width * 0.2;
+  const columnX = [leftX, midX, rightX];
+  const labelSpace = [leftX - 30, (hasRight ? rightX - 24 : width - 8) - midX - 24, width - rightX - 20];
 
   // Kolumn 0: rättsfrågor i sin ordning, samlad analys sist.
   const left = nodes.filter((n) => column(n) === 0).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "analysis" ? 1 : -1));
   place(left, 0);
 
-  // Kolumn 1 och 2: barycenter av de noder i kolumn 0 som hänvisar till noden.
-  const citers = new Map<string, number[]>();
-  for (const e of graph.edges) {
-    if (e.kind !== "cites") continue;
-    const from = byId.get(e.from);
-    if (!from || column(from) !== 0) continue;
-    citers.set(e.to, [...(citers.get(e.to) ?? []), from.y]);
-  }
-  const bary = (n: Positioned): number => {
-    const ys = citers.get(n.id);
-    return ys && ys.length ? ys.reduce((s, y) => s + y, 0) / ys.length : Number.POSITIVE_INFINITY;
-  };
-  const kindRank = (n: Positioned) => (n.sourceKind ? SOURCE_KIND_ORDER.indexOf(n.sourceKind) : 0);
-  const compare = (a: Positioned, b: Positioned) => {
+  const kindRank = (n: Positioned) => (n.sourceKind ? SOURCE_KIND_ORDER.indexOf(n.sourceKind) : n.kind === "missing" ? 0 : 1);
+  const compareBy = (bary: (n: Positioned) => number) => (a: Positioned, b: Positioned) => {
     const ba = bary(a);
     const bb = bary(b);
     if (ba !== bb) return ba - bb; // oanvända (Infinity) hamnar sist
@@ -281,17 +498,32 @@ export function layoutGraph(graph: Graph, opts: LayoutOptions): Positioned[] {
     if (b.weight !== a.weight) return b.weight - a.weight;
     return a.label.localeCompare(b.label, "sv");
   };
-  place(nodes.filter((n) => column(n) === 1).sort(compare), 1);
-  place(nodes.filter((n) => column(n) === 2).sort(compare), 2);
+  const baryFrom = (cols: number[]) => {
+    const ys = new Map<string, number[]>();
+    for (const e of graph.edges) {
+      const from = byId.get(e.from);
+      if (!from || !cols.includes(column(from))) continue;
+      ys.set(e.to, [...(ys.get(e.to) ?? []), from.y]);
+    }
+    return (n: Positioned) => {
+      const list = ys.get(n.id);
+      return list?.length ? list.reduce((s, y) => s + y, 0) / list.length : Number.POSITIVE_INFINITY;
+    };
+  };
+
+  // Kolumn 1 utifrån frågorna; kolumn 2 utifrån både frågor (saknade) och källor (föreslagna).
+  place(nodes.filter((n) => column(n) === 1).sort(compareBy(baryFrom([0]))), 1);
+  place(nodes.filter((n) => column(n) === 2).sort(compareBy(baryFrom([0, 1]))), 2);
 
   function place(list: Positioned[], col: 0 | 1 | 2) {
     if (list.length === 0) return;
-    const gap = Math.max(ROW_GAP, Math.min(72, (height - 40) / list.length));
+    const gap = Math.max(ROW_GAP, Math.min(72, (height - 60) / list.length));
     const total = (list.length - 1) * gap;
-    const top = Math.max(24, (height - total) / 2);
+    const top = Math.max(30, (height - total) / 2);
     list.forEach((n, i) => {
       n.x = Math.max(n.r + 8, Math.min(width - n.r - 8, columnX[col]!));
-      n.y = Math.max(n.r + 8, Math.min(height - n.r - 8, top + i * gap));
+      n.y = top + i * gap;
+      n.labelChars = Math.max(6, Math.min(40, Math.floor(labelSpace[col]! / CHAR_W)));
     });
   }
 
@@ -313,16 +545,19 @@ export interface GraphStats {
   sources: number;
   usedSources: number;
   missing: number;
+  suggested: number;
   references: number;
 }
 
 export function graphStats(graph: Graph): GraphStats {
   const cited = new Set(graph.edges.filter((e) => e.kind === "cites").map((e) => e.to));
+  const nodeKind = new Map(graph.nodes.map((n) => [n.id, n.kind]));
   return {
     issues: graph.nodes.filter((n) => n.kind === "issue").length,
     sources: graph.nodes.filter((n) => n.kind === "source").length,
     usedSources: graph.nodes.filter((n) => n.kind === "source" && cited.has(n.id)).length,
     missing: graph.nodes.filter((n) => n.kind === "missing").length,
-    references: graph.edges.filter((e) => e.kind === "refers").length,
+    suggested: graph.nodes.filter((n) => n.kind === "suggested").length,
+    references: graph.edges.filter((e) => e.kind === "refers" && nodeKind.get(e.to) === "source").length,
   };
 }

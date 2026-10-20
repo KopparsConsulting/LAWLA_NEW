@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FlaskConical } from "lucide-react";
+import { ChevronDown, FlaskConical, Share2 } from "lucide-react";
 import { historyApi, projectsApi } from "@/api/client";
 import type { ExpandedEvidenceDto, ProjectDetailDto, ProjectLegalIssueDto } from "@/api/types";
 import { Badge, Button, Card, EmptyState, ErrorNote, Markdown, Spinner } from "@/components/ui";
@@ -12,6 +12,7 @@ import { useMainPrompt } from "../useSettings";
 export function IssueAnalysesStep({ project, aiEnabled }: { project: ProjectDetailDto; aiEnabled: boolean }) {
   const issues = [...(project.legalIssues ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
   const evidence = useQuery({ queryKey: ["evidence", project.id], queryFn: () => projectsApi.evidence(project.id) });
+  const target = Number(useSearchParams()[0].get("fraga"));
 
   if (issues.length === 0) {
     return (
@@ -32,7 +33,15 @@ export function IssueAnalysesStep({ project, aiEnabled }: { project: ProjectDeta
       )}
       {!aiEnabled && <p className="text-sm text-muted">AI-analys är avstängd i plattformen just nu.</p>}
       {issues.map((issue, i) => (
-        <IssueCard key={issue.id} projectId={project.id} issue={issue} index={i + 1} aiEnabled={aiEnabled} evidence={evidence.data ?? []} />
+        <IssueCard
+          key={issue.id}
+          projectId={project.id}
+          issue={issue}
+          index={i + 1}
+          aiEnabled={aiEnabled}
+          evidence={evidence.data ?? []}
+          highlight={issue.id === target}
+        />
       ))}
     </div>
   );
@@ -44,16 +53,23 @@ function IssueCard({
   index,
   aiEnabled,
   evidence,
+  highlight = false,
 }: {
   projectId: number;
   issue: ProjectLegalIssueDto;
   index: number;
   aiEnabled: boolean;
   evidence: ExpandedEvidenceDto[];
+  /** Rättsfrågan som länken pekade på (?fraga=id) – rullas fram och markeras. */
+  highlight?: boolean;
 }) {
   const qc = useQueryClient();
   const mainPrompt = useMainPrompt(projectId);
-  const [open, setOpen] = useState(issue.analysisCount > 0);
+  const [open, setOpen] = useState(issue.analysisCount > 0 || highlight);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlight) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [highlight]);
   const key = ["issueAnalyses", projectId, issue.id];
   const analyses = useQuery({ queryKey: key, queryFn: () => projectsApi.issueAnalyses(projectId, issue.id), enabled: open });
 
@@ -73,59 +89,66 @@ function IssueCard({
   const [latest, ...older] = sorted;
 
   return (
-    <Card>
-      <div className="flex items-start gap-3 p-4">
-        <span className="mt-0.5 font-serif text-sm text-muted">{index}.</span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium leading-relaxed">{issue.text}</p>
-          <div className="mt-1.5 flex items-center gap-2">
-            <Badge tone={issue.analysisCount > 0 ? "ok" : "neutral"}>
-              {issue.analysisCount > 0 ? `${issue.analysisCount} analys${issue.analysisCount > 1 ? "er" : ""}` : "Ej analyserad"}
-            </Badge>
-            {issue.analysisCount > 0 && (
-              <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-0.5 text-xs text-accent">
-                <ChevronDown className={`size-3.5 transition ${open ? "rotate-180" : ""}`} /> {open ? "Dölj" : "Visa"}
-              </button>
+    <div ref={ref} className={highlight ? "scroll-mt-4 rounded-lg ring-2 ring-accent/50" : "scroll-mt-4"}>
+      <Card>
+        <div className="flex items-start gap-3 p-4">
+          <span className="mt-0.5 font-serif text-sm text-muted">{index}.</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium leading-relaxed">{issue.text}</p>
+            <div className="mt-1.5 flex items-center gap-2">
+              <Badge tone={issue.analysisCount > 0 ? "ok" : "neutral"}>
+                {issue.analysisCount > 0 ? `${issue.analysisCount} analys${issue.analysisCount > 1 ? "er" : ""}` : "Ej analyserad"}
+              </Badge>
+              {issue.analysisCount > 0 && (
+                <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-0.5 text-xs text-accent">
+                  <ChevronDown className={`size-3.5 transition ${open ? "rotate-180" : ""}`} /> {open ? "Dölj" : "Visa"}
+                </button>
+              )}
+              {issue.analysisCount > 0 && (
+                <Link to={`/utredning/${projectId}/graf?fokus=issue:${issue.id}`} className="flex items-center gap-1 text-xs text-accent hover:underline">
+                  <Share2 className="size-3" /> Källor i grafen
+                </Link>
+              )}
+            </div>
+          </div>
+          {aiEnabled && (
+            <Button size="sm" variant="secondary" icon={<FlaskConical className="size-3.5" />} loading={analyze.isPending} onClick={() => analyze.mutate()}>
+              {issue.analysisCount > 0 ? "Analysera igen" : "Analysera"}
+            </Button>
+          )}
+        </div>
+        {analyze.isPending && <p className="animate-pulse border-t border-line px-4 py-3 text-sm text-muted">Analyserar rättsfrågan – det kan ta en minut…</p>}
+        {analyze.error && (
+          <div className="border-t border-line p-4">
+            <ErrorNote error={analyze.error} />
+          </div>
+        )}
+        {open && (
+          <div className="border-t border-line p-4">
+            {analyses.isLoading && <Spinner />}
+            {analyses.error && <ErrorNote error={analyses.error} onRetry={() => analyses.refetch()} />}
+            {latest && (
+              <>
+                <p className="mb-2 text-xs text-muted">Senaste analys · {formatDateTime(latest.createdAt)}</p>
+                <CitedMarkdown markdown={latest.outputContent ?? ""} evidence={evidence} projectId={projectId} />
+              </>
+            )}
+            {older.length > 0 && (
+              <details className="mt-4">
+                <summary className="cursor-pointer text-xs text-muted">Tidigare analyser ({older.length})</summary>
+                <div className="mt-3 space-y-4">
+                  {older.map((a) => (
+                    <div key={a.id} className="border-l-2 border-line pl-3">
+                      <p className="mb-1 text-xs text-muted">{formatDateTime(a.createdAt)}</p>
+                      <Markdown>{a.outputContent ?? ""}</Markdown>
+                    </div>
+                  ))}
+                </div>
+              </details>
             )}
           </div>
-        </div>
-        {aiEnabled && (
-          <Button size="sm" variant="secondary" icon={<FlaskConical className="size-3.5" />} loading={analyze.isPending} onClick={() => analyze.mutate()}>
-            {issue.analysisCount > 0 ? "Analysera igen" : "Analysera"}
-          </Button>
         )}
-      </div>
-      {analyze.isPending && <p className="animate-pulse border-t border-line px-4 py-3 text-sm text-muted">Analyserar rättsfrågan – det kan ta en minut…</p>}
-      {analyze.error && (
-        <div className="border-t border-line p-4">
-          <ErrorNote error={analyze.error} />
-        </div>
-      )}
-      {open && (
-        <div className="border-t border-line p-4">
-          {analyses.isLoading && <Spinner />}
-          {analyses.error && <ErrorNote error={analyses.error} onRetry={() => analyses.refetch()} />}
-          {latest && (
-            <>
-              <p className="mb-2 text-xs text-muted">Senaste analys · {formatDateTime(latest.createdAt)}</p>
-              <CitedMarkdown markdown={latest.outputContent ?? ""} evidence={evidence} projectId={projectId} />
-            </>
-          )}
-          {older.length > 0 && (
-            <details className="mt-4">
-              <summary className="cursor-pointer text-xs text-muted">Tidigare analyser ({older.length})</summary>
-              <div className="mt-3 space-y-4">
-                {older.map((a) => (
-                  <div key={a.id} className="border-l-2 border-line pl-3">
-                    <p className="mb-1 text-xs text-muted">{formatDateTime(a.createdAt)}</p>
-                    <Markdown>{a.outputContent ?? ""}</Markdown>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-        </div>
-      )}
-    </Card>
+      </Card>
+    </div>
   );
 }

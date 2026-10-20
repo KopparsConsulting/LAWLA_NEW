@@ -16,6 +16,8 @@ export interface Citation {
   /** Normaliserad nyckel som används för matchning. */
   key: string;
   evidenceId: number | null;
+  /** Meningen i analysen där hänvisningen står (ren text, förkortad vid behov). */
+  context: string;
 }
 
 export interface CitationReport {
@@ -277,13 +279,57 @@ export function parseCitationHref(href: string | undefined): CitationTarget | nu
   return null;
 }
 
+/** Tar bort markdown-syntax så att ett utdrag kan visas som ren text. */
+export function plainText(md: string): string {
+  return md
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__|\*|_)(\S[^*_]*?)\1/g, "$2")
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Meningen runt ett textställe: stycket/raden avgränsas av radbrytningar, meningen av
+ * punkt, utrops- eller frågetecken följt av versal (så att "12 kap. 3 §" och "s. 583" hålls ihop).
+ */
+export function sentenceAround(text: string, start: number, end: number, max = 260): string {
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const nl = text.indexOf("\n", end);
+  const lineEnd = nl === -1 ? text.length : nl;
+  const line = text.slice(lineStart, lineEnd);
+  const s = start - lineStart;
+  const e = end - lineStart;
+  let from = 0;
+  let to = line.length;
+  for (const m of line.matchAll(/[.!?](?:\*\*|\*|_)?\s+(?=[*_]*[A-ZÅÄÖ])/g)) {
+    const cut = m.index! + m[0].length;
+    if (cut <= s) from = cut;
+    else if (m.index! >= e) {
+      to = m.index! + 1;
+      break;
+    }
+  }
+  let out = plainText(line.slice(from, to));
+  if (out.length > max) {
+    const mid = plainText(line.slice(from, s)).length;
+    const a = Math.max(0, Math.min(out.length - max, mid - Math.floor(max / 3)));
+    out = `${a > 0 ? "…" : ""}${out.slice(a, a + max).trim()}${a + max < out.length ? "…" : ""}`;
+  }
+  return out;
+}
+
 /** Analyserar texten och återger den med klickbara hänvisningar. */
 export function linkifyCitations(markdown: string, evidence: ExpandedEvidenceDto[]): { markdown: string; report: CitationReport } {
   const index = indexEvidence(evidence);
   const citations: Citation[] = [];
   const parts: string[] = [];
 
+  let base = 0;
   for (const seg of segments(markdown)) {
+    const segStart = base;
+    base += seg.text.length;
     if (seg.protect) {
       parts.push(seg.text);
       continue;
@@ -291,7 +337,7 @@ export function linkifyCitations(markdown: string, evidence: ExpandedEvidenceDto
     let cursor = 0;
     for (const f of findInSegment(seg.text)) {
       const evidenceId = resolve(f, index);
-      citations.push({ text: f.text, key: f.key, evidenceId });
+      citations.push({ text: f.text, key: f.key, evidenceId, context: sentenceAround(markdown, segStart + f.start, segStart + f.end) });
       const target: CitationTarget = evidenceId != null ? { kind: "evidence", evidenceId } : { kind: "search", query: f.text };
       parts.push(seg.text.slice(cursor, f.start), `[${f.text}](${citationHref(target)})`);
       cursor = f.end;

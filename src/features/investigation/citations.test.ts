@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExpandedEvidenceDto } from "@/api/types";
-import { lawWord, linkifyCitations, parseCitationHref } from "./citations";
+import { lawWord, linkifyCitations, parseCitationHref, sentenceAround } from "./citations";
 
 function ev(partial: Partial<ExpandedEvidenceDto> & { id: number }): ExpandedEvidenceDto {
   return {
@@ -96,5 +96,33 @@ describe("parseCitationHref", () => {
     expect(parseCitationHref("#lawla:search:NJA%202015%20s.%20482")).toEqual({ kind: "search", query: "NJA 2015 s. 482" });
     expect(parseCitationHref("https://example.com")).toBeNull();
     expect(parseCitationHref(undefined)).toBeNull();
+  });
+});
+
+describe("sentenceAround", () => {
+  it("tar meningen runt hänvisningen utan att dela vid kap., s. eller prop.", () => {
+    const md = "Förordet skrevs före vigseln. Enligt **12 kap. 3 § ÄktB** och prop. 1986/87:1 s. 186 kan det jämkas. Nästa mening.";
+    const start = md.indexOf("12 kap.");
+    expect(sentenceAround(md, start, start + 16)).toBe("Enligt 12 kap. 3 § ÄktB och prop. 1986/87:1 s. 186 kan det jämkas.");
+  });
+
+  it("håller sig inom raden och tar bort listmarkörer och länkar", () => {
+    const md = "## Rubrik\n\n- Se [NJA 1993 s. 583](https://x) om oskälighet\n- Annat";
+    const start = md.indexOf("NJA");
+    expect(sentenceAround(md, start, start + 15)).toBe("Se NJA 1993 s. 583 om oskälighet");
+  });
+
+  it("kortar långa meningar kring hänvisningen", () => {
+    const md = `${"Mycket lång text ".repeat(30)}enligt 36 § AvtL ${"och ännu mer text ".repeat(30)}.`;
+    const start = md.indexOf("36 §");
+    const out = sentenceAround(md, start, start + 9, 120);
+    expect(out.length).toBeLessThanOrEqual(122);
+    expect(out).toContain("36 § AvtL");
+    expect(out.startsWith("…") && out.endsWith("…")).toBe(true);
+  });
+
+  it("följer med i rapporten från linkifyCitations", () => {
+    const { report } = linkifyCitations("Inledning. Se NJA 2020 s. 1 här. Slut.", []);
+    expect(report.citations[0]!.context).toBe("Se NJA 2020 s. 1 här.");
   });
 });

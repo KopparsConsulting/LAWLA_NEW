@@ -6,14 +6,16 @@ import { parseBlocks, type Inline } from "./mdblocks";
 
 export async function markdownToDocxBlob(markdown: string, meta: { title: string; author?: string | null }): Promise<Blob> {
   const docx = await import("docx");
-  const { AlignmentType, BorderStyle, Document, HeadingLevel, LevelFormat, Packer, Paragraph, TextRun } = docx;
+  const { AlignmentType, BorderStyle, Document, HeadingLevel, LevelFormat, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } = docx;
 
   const runs = (inlines: Inline[]) =>
     inlines.map((i) => new TextRun({ text: i.text, bold: i.bold, italics: i.italic }));
 
   const headingLevels = [HeadingLevel.TITLE, HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5] as const;
 
-  const children: InstanceType<typeof Paragraph>[] = [];
+  const children: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
+  const cellBorder = { style: BorderStyle.SINGLE, size: 4, color: "D9D4C7" };
+  const alignment = { left: AlignmentType.LEFT, center: AlignmentType.CENTER, right: AlignmentType.RIGHT } as const;
   let listInstance = 0;
   for (const block of parseBlocks(markdown)) {
     switch (block.type) {
@@ -45,6 +47,29 @@ export async function markdownToDocxBlob(markdown: string, meta: { title: string
             }),
           );
         }
+        break;
+      }
+      case "table": {
+        const row = (cells: typeof block.header, header: boolean) =>
+          new TableRow({
+            tableHeader: header,
+            children: block.header.map(
+              (_, i) =>
+                new TableCell({
+                  borders: { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder },
+                  shading: header ? { fill: "EFECE4" } : undefined,
+                  margins: { top: 40, bottom: 40, left: 80, right: 80 },
+                  children: [
+                    new Paragraph({
+                      alignment: alignment[block.align[i] ?? "left"],
+                      children: runs((cells[i] ?? []).map((x) => ({ ...x, bold: header || x.bold }))),
+                    }),
+                  ],
+                }),
+            ),
+          });
+        children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [row(block.header, true), ...block.rows.map((r) => row(r, false))] }));
+        children.push(new Paragraph({ children: [], spacing: { after: 120 } }));
         break;
       }
       case "hr":

@@ -36,3 +36,19 @@ describe("demoteHeadings", () => {
     expect(demoteHeadings("# A\n## B\n###### C", 2)).toBe("### A\n#### B\n###### C");
   });
 });
+
+describe("tabeller", () => {
+  it("tolkar GFM-tabeller med justering och skyddade lodstreck", () => {
+    const blocks = parseBlocks("Före\n\n| Källa | F1 |\n| --- | :---: |\n| **ÄktB** a\\|b | 2 |\n| NJA | – |\n\nEfter");
+    expect(blocks.map((b) => b.type)).toEqual(["paragraph", "table", "paragraph"]);
+    const t = blocks[1] as Extract<ReturnType<typeof parseBlocks>[number], { type: "table" }>;
+    expect(t.align).toEqual(["left", "center"]);
+    expect(t.header.map((c) => c.map((i) => i.text).join(""))).toEqual(["Källa", "F1"]);
+    expect(t.rows).toHaveLength(2);
+    expect(t.rows[0]![0]).toEqual([{ type: "text", text: "ÄktB", bold: true }, { type: "text", text: " a|b" }]);
+  });
+
+  it("tar inte en vanlig rad med lodstreck för en tabell", () => {
+    expect(parseBlocks("| bara en rad |").map((b) => b.type)).toEqual(["paragraph"]);
+  });
+});

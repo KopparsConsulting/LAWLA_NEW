@@ -1,7 +1,7 @@
 /**
  * Minimal markdown-tolk för export till Word. Täcker det AI-analyserna och rapporten
  * faktiskt använder: rubriker, stycken, punkt- och nummerlistor, citat, avdelare,
- * fet/kursiv text och länkar (bara länktexten behålls).
+ * fet/kursiv text, tabeller (GFM) och länkar (bara länktexten behålls).
  */
 
 export type Inline = { type: "text"; text: string; bold?: boolean; italic?: boolean };
@@ -11,7 +11,16 @@ export type Block =
   | { type: "paragraph"; inlines: Inline[] }
   | { type: "list"; ordered: boolean; items: Inline[][] }
   | { type: "quote"; inlines: Inline[] }
+  | { type: "table"; header: Inline[][]; rows: Inline[][][]; align: ("left" | "center" | "right")[] }
   | { type: "hr" };
+
+const TABLE_SEP = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+
+/** Delar en tabellrad i celler; `\|` räknas som ett tecken i cellen. */
+export function splitRow(line: string): string[] {
+  const t = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  return t.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+}
 
 /** Tolkar inline-markdown (**fet**, *kursiv*, [text](url), `kod`) till textsegment. */
 export function parseInlines(text: string): Inline[] {
@@ -47,7 +56,8 @@ export function parseBlocks(markdown: string): Block[] {
     list = null;
   };
 
-  for (const raw of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li]!;
     const line = raw.trimEnd();
     if (line.trim().startsWith("```")) {
       inCode = !inCode;
@@ -75,6 +85,18 @@ export function parseBlocks(markdown: string): Block[] {
       flushParagraph();
       flushList();
       blocks.push({ type: "hr" });
+      continue;
+    }
+    if (line.trim().startsWith("|") && TABLE_SEP.test(lines[li + 1] ?? "")) {
+      flushParagraph();
+      flushList();
+      const header = splitRow(line);
+      const align = splitRow(lines[li + 1]!).map((c) => (c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : "left") as "left" | "center" | "right");
+      const rows: Inline[][][] = [];
+      li += 2;
+      while (li < lines.length && lines[li]!.trim().startsWith("|")) rows.push(splitRow(lines[li++]!).map(parseInlines));
+      li -= 1;
+      blocks.push({ type: "table", header: header.map(parseInlines), rows, align });
       continue;
     }
     const quote = line.match(/^>\s?(.*)$/);

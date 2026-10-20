@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { DocumentReferenceDto, ExpandedEvidenceDto, LegalIssueAnalysisDto, ProjectAnalysisDto, ProjectDetailDto } from "@/api/types";
-import { ANALYSIS_NODE_ID, buildGraph, classifySource, graphStats, issueNodeId, layoutGraph, layoutRows, missingNodeId, neighbours, ROW_GAP, sourceNodeId } from "./graph";
+import {
+  ANALYSIS_NODE_ID,
+  assessGraph,
+  buildGraph,
+  buildMatrix,
+  citeEdgeId,
+  classifySource,
+  focusGraph,
+  graphStats,
+  issueNodeId,
+  layoutGraph,
+  layoutHeight,
+  layoutRows,
+  MAX_SUGGESTED,
+  missingNodeId,
+  neighbours,
+  ROW_GAP,
+  sourceNodeId,
+  suggestedNodeId,
+  worstLevel,
+} from "./graph";
 
 function ev(id: number, displayLabel: string, documentTitle: string | null = null, documentId: number | null = null): ExpandedEvidenceDto {
   return { id, type: 0, displayLabel, content: null, annotation: null, documentId, documentTitle, chunkId: null, chunkIndex: null, chapter: null, paragraph: null };
@@ -106,7 +126,7 @@ describe("buildGraph", () => {
       [400, [ref(100)]],
     ]);
     const g = buildGraph({ project, evidence, issueAnalyses, references });
-    const refs = g.edges.filter((e) => e.kind === "refers");
+    const refs = g.edges.filter((e) => e.kind === "refers" && e.to.startsWith("source:"));
     expect(refs).toHaveLength(2);
     expect(refs.some((e) => e.from === sourceNodeId(2) && e.to === sourceNodeId(1))).toBe(true);
     expect(refs.some((e) => e.from === sourceNodeId(4) && e.to === sourceNodeId(1))).toBe(true);
@@ -114,7 +134,7 @@ describe("buildGraph", () => {
 
   it("sammanfattar statistik", () => {
     const g = buildGraph({ project, evidence, issueAnalyses });
-    expect(graphStats(g)).toEqual({ issues: 3, sources: 4, usedSources: 4, missing: 1, references: 0 });
+    expect(graphStats(g)).toEqual({ issues: 3, sources: 4, usedSources: 4, missing: 1, suggested: 0, references: 0 });
   });
 
   it("hittar grannar", () => {
@@ -179,5 +199,152 @@ describe("layoutGraph", () => {
     expect(layoutGraph({ nodes: [], edges: [] }, { width: 400, height: 300 })).toEqual([]);
     const one = layoutGraph({ nodes: [{ id: "x", kind: "source", label: "x", weight: 0 }], edges: [] }, { width: 400, height: 300 });
     expect(one[0]).toMatchObject({ x: 200, y: 150 });
+  });
+});
+
+describe("föreslagna källor och sammanhang", () => {
+  const ref = (targetDocumentId: number, displayText: string, targetDocumentTitle: string): DocumentReferenceDto => ({
+    id: targetDocumentId,
+    canonicalForm: displayText,
+    referenceType: null,
+    displayText,
+    citationText: null,
+    targetDocumentId,
+    targetDocumentTitle,
+    isResolved: true,
+  });
+
+  it("lägger dokument som källorna hänvisar till men som saknas i underlaget som föreslagna källor", () => {
+    const references = new Map<number, DocumentReferenceDto[]>([
+      [100, [ref(500, "SOU 1981:85", "SOU 1981:85 Ny äktenskapsbalk"), ref(600, "NJA 2001 s. 1", "NJA 2001 s. 1")]],
+      [200, [ref(500, "SOU 1981:85", "SOU 1981:85 Ny äktenskapsbalk")]],
+    ]);
+    const g = buildGraph({ project, evidence, issueAnalyses: new Map(), references });
+    const sou = g.nodes.find((n) => n.id === suggestedNodeId(500))!;
+    expect(sou).toMatchObject({ kind: "suggested", documentId: 500, weight: 2 });
+    expect(g.edges.filter((e) => e.to === sou.id).map((e) => e.from).sort()).toEqual([sourceNodeId(1), sourceNodeId(2)]);
+    expect(graphStats(g).suggested).toBe(2);
+    expect(graphStats(g).references).toBe(0);
+  });
+
+  it("begränsar antalet föreslagna källor", () => {
+    const many = Array.from({ length: MAX_SUGGESTED + 5 }, (_, i) => ref(1000 + i, `SOU 2000:${i}`, `SOU 2000:${i}`));
+    const g = buildGraph({ project, evidence, issueAnalyses: new Map(), references: new Map([[100, many]]) });
+    expect(g.nodes.filter((n) => n.kind === "suggested")).toHaveLength(MAX_SUGGESTED);
+  });
+
+  it("kopplar en saknad hänvisning till dokumentet när en källa hänvisar till samma sak", () => {
+    const issueAnalyses = new Map([[10, analysis(10, "Jfr NJA 2020 s. 1.")]]);
+    const references = new Map<number, DocumentReferenceDto[]>([[200, [ref(700, "NJA 2020 s. 1", "NJA 2020 s. 1 (Ö 12-19)")]]]);
+    const g = buildGraph({ project, evidence, issueAnalyses, references });
+    const missing = g.nodes.find((n) => n.id === missingNodeId("NJA 2020 s. 1"))!;
+    expect(missing.documentId).toBe(700);
+    expect(g.nodes.some((n) => n.kind === "suggested")).toBe(false);
+    expect(g.edges.some((e) => e.kind === "refers" && e.from === sourceNodeId(2) && e.to === missing.id)).toBe(true);
+  });
+
+  it("sparar meningen där hänvisningen står på kanten", () => {
+    const issueAnalyses = new Map([[10, analysis(10, "Inledning. Enligt **12 kap. 3 § ÄktB** kan förordet jämkas. Det andra stycket.\n\nSe även NJA 1993 s. 583.")]]);
+    const g = buildGraph({ project, evidence, issueAnalyses });
+    const edge = g.edges.find((e) => e.id === citeEdgeId(issueNodeId(10), sourceNodeId(1)))!;
+    expect(edge.contexts).toEqual(["Enligt 12 kap. 3 § ÄktB kan förordet jämkas."]);
+    expect(g.edges.find((e) => e.id === citeEdgeId(issueNodeId(10), sourceNodeId(2)))!.contexts).toEqual(["Se även NJA 1993 s. 583."]);
+  });
+});
+
+describe("assessGraph", () => {
+  const withEvidenceAt = (createdAt: string): ProjectDetailDto => ({
+    ...project,
+    evidence: [{ id: 1, type: 0, documentId: 100, chunkId: null, canonicalReference: null, displayLabel: null, annotation: null, createdAt }],
+  });
+  const at = (a: LegalIssueAnalysisDto, createdAt: string) => ({ ...a, createdAt });
+
+  it("varnar för saknade hänvisningar, ensam källa, saknat lagrum och frågor utan analys", () => {
+    const issueAnalyses = new Map([
+      [10, analysis(10, "Se NJA 1993 s. 583 och NJA 2020 s. 1.")],
+      [11, analysis(11, "Ingen hänvisning alls.")],
+    ]);
+    const g = buildGraph({ project, evidence, issueAnalyses });
+    const w = assessGraph(g, { project, issueAnalyses });
+    const codes = (id: number) => w.get(issueNodeId(id))!.map((x) => x.code);
+    expect(codes(10)).toEqual(["missing", "single-source", "no-lagrum"]);
+    expect(worstLevel(w.get(issueNodeId(10)))).toBe("danger");
+    expect(codes(11)).toEqual(["no-citations"]);
+    expect(codes(12)).toEqual(["no-analysis"]);
+  });
+
+  it("noterar avsaknad av praxis och bara doktrin", () => {
+    const ev2 = [...evidence, { ...evidence[0]!, id: 5, displayLabel: "Kommentar till ÄktB 12 kap. 3 §", documentTitle: "Äktenskapsbalken – en kommentar" }];
+    const issueAnalyses = new Map([[10, analysis(10, "Enligt 12 kap. 3 § ÄktB och prop. 1986/87:1.")]]);
+    const g = buildGraph({ project, evidence: ev2, issueAnalyses });
+    expect(assessGraph(g, { project, issueAnalyses }).get(issueNodeId(10))!.map((x) => x.code)).toEqual(["no-praxis"]);
+  });
+
+  it("varnar när underlaget har ändrats efter analysen", () => {
+    const issueAnalyses = new Map([[10, at(analysis(10, "Se 12 kap. 3 § ÄktB och NJA 1993 s. 583."), "2026-10-10T10:00:00Z")]]);
+    const g = buildGraph({ project, evidence, issueAnalyses });
+    const later = assessGraph(g, { project: withEvidenceAt("2026-10-12T10:00:00Z"), issueAnalyses }).get(issueNodeId(10))!;
+    expect(later.find((x) => x.code === "stale")?.text).toMatch(/^1 rättskälla har lagts till/);
+    const earlier = assessGraph(g, { project: withEvidenceAt("2026-10-01T10:00:00Z"), issueAnalyses }).get(issueNodeId(10))!;
+    expect(earlier.some((x) => x.code === "stale")).toBe(false);
+  });
+
+  it("varnar när delanalyser körts om efter den samlade analysen", () => {
+    const issueAnalyses = new Map([[10, at(analysis(10, "Se 12 kap. 3 § ÄktB."), "2026-10-15T10:00:00Z")]]);
+    const pa: ProjectAnalysisDto = { inputSummary: null, id: 1, outputContent: "Se 12 kap. 3 § ÄktB och NJA 1993 s. 583.", createdAt: "2026-10-14T10:00:00Z" };
+    const g = buildGraph({ project, evidence, issueAnalyses, analysis: pa });
+    const w = assessGraph(g, { project, issueAnalyses, analysis: pa }).get(ANALYSIS_NODE_ID)!;
+    expect(w.find((x) => x.code === "stale")?.text).toMatch(/1 delanalys har körts om/);
+  });
+});
+
+describe("buildMatrix", () => {
+  it("ger en rad per använd källa, en kolumn per rättsfråga och listar saknade och oanvända", () => {
+    const issueAnalyses = new Map([
+      [10, analysis(10, "Se 12 kap. 3 § ÄktB, 12 kap. 3 § ÄktB och NJA 2020 s. 1.")],
+      [11, analysis(11, "Se 12 kap. 3 § ÄktB och NJA 1993 s. 583.")],
+    ]);
+    const m = buildMatrix(buildGraph({ project, evidence, issueAnalyses }));
+    expect(m.columns.map((c) => c.short)).toEqual(["F1", "F2", "F3"]);
+    expect(m.rows.map((r) => [r.node.id, r.cells])).toEqual([
+      [sourceNodeId(1), [2, 1, 0]], // lagrum först
+      [sourceNodeId(2), [0, 1, 0]],
+    ]);
+    expect(m.missing.map((r) => r.node.label)).toEqual(["NJA 2020 s. 1"]);
+    expect(m.unused.map((n) => n.id)).toEqual([sourceNodeId(3), sourceNodeId(4)]);
+  });
+});
+
+describe("focusGraph", () => {
+  it("visar rättsfrågan, dess källor och källornas korsreferenser men inte andra frågor", () => {
+    const issueAnalyses = new Map([
+      [10, analysis(10, "Se NJA 1993 s. 583.")],
+      [11, analysis(11, "Se NJA 1993 s. 583 och 36 § AvtL.")],
+    ]);
+    const references = new Map<number, DocumentReferenceDto[]>([
+      [200, [{ id: 1, canonicalForm: null, referenceType: null, displayText: "12 kap. 3 § ÄktB", citationText: null, targetDocumentId: 100, targetDocumentTitle: "ÄktB", isResolved: true }]],
+    ]);
+    const f = focusGraph(buildGraph({ project, evidence, issueAnalyses, references }), issueNodeId(10));
+    expect(f.nodes.map((n) => n.id).sort()).toEqual([issueNodeId(10), sourceNodeId(1), sourceNodeId(2)].sort());
+    expect(f.edges.every((e) => e.from !== issueNodeId(11))).toBe(true);
+  });
+});
+
+describe("layout med många källor", () => {
+  it("staplar inte noder på varandra när underlaget är stort", () => {
+    const big = Array.from({ length: 40 }, (_, i) => ev(100 + i, `Källa ${i}`));
+    const g = buildGraph({ project, evidence: big, issueAnalyses: new Map() });
+    const h = layoutHeight(g);
+    const pos = layoutGraph(g, { width: 900, height: 600 });
+    const ys = pos.filter((n) => n.kind === "source").map((n) => n.y).sort((a, b) => a - b);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]! - ys[i - 1]!).toBeGreaterThanOrEqual(ROW_GAP);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(h);
+  });
+
+  it("anpassar etiketternas längd efter bredden", () => {
+    const g = buildGraph({ project, evidence, issueAnalyses: new Map() });
+    const wide = layoutGraph(g, { width: 1000, height: 500 }).find((n) => n.kind === "source")!;
+    const narrow = layoutGraph(g, { width: 360, height: 500 }).find((n) => n.kind === "source")!;
+    expect(narrow.labelChars).toBeLessThan(wide.labelChars);
   });
 });

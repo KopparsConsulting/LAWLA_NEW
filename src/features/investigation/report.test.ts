@@ -52,6 +52,20 @@ describe("buildReportMarkdown", () => {
     expect(md).not.toContain("Rättskällor");
   });
 
+  it("redovisar källtäckning med tabell, saknade hänvisningar och anmärkningar", () => {
+    const md = buildReportMarkdown(
+      { ...input, issueAnalyses: new Map([[4, { id: 20, legalIssueId: 4, outputContent: "Enligt 12 kap. 3 § ÄktB, jfr NJA 2020 s. 1.", createdAt: "" }]]) },
+      new Set(["coverage"]),
+    );
+    expect(md).toContain("## 1. Källtäckning och kontroll");
+    expect(md).toContain("- **F1** Är förordet oskäligt enligt 12 kap. 3 § ÄktB?");
+    expect(md).toContain("| Rättskälla | Typ | F1 | Samlad |\n| --- | --- | :---: | :---: |\n| Äktenskapsbalk – 12 kap. 3 § | Lagrum | 1 | – |");
+    expect(md).toContain("| NJA 2020 s. 1 (saknas i underlaget) | – | 1 | – |");
+    expect(md).toContain("**Hänvisningar som saknas i underlaget:** NJA 2020 s. 1 (F1).");
+    expect(md).toContain("- **F1:** Vilar på en enda rättskälla.");
+    expect(md).toContain("- **Samlad:** Analysen hänvisar inte till något i underlaget.");
+  });
+
   it("exporterar till ett giltigt Word-dokument", async () => {
     const blob = await markdownToDocxBlob(buildReportMarkdown(input), { title: "Test" });
     const bytes = new Uint8Array(await blob.arrayBuffer());
